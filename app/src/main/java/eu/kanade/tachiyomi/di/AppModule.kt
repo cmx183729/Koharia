@@ -119,20 +119,27 @@ class AppModule(val app: Application) : InjektModule {
                             // AndroidxSqliteDriver opens lazily. Force the first query here so
                             // migration failures stay inside this guarded startup sequence.
                             runBlocking {
-                                listOf(
-                                    "PRAGMA journal_mode = WAL",
-                                    "PRAGMA synchronous = NORMAL",
-                                    "PRAGMA temp_store = MEMORY",
-                                    "PRAGMA cache_size = -32000",
-                                ).forEach { sql ->
-                                    driver.executeQuery(
-                                        identifier = null,
-                                        sql = sql,
-                                        mapper = { QueryResult.Unit },
-                                        parameters = 0,
-                                        binders = null,
-                                    ).await()
-                                }
+                                driver.executeQuery(
+                                    identifier = null,
+                                    sql = "PRAGMA synchronous = NORMAL",
+                                    mapper = { QueryResult.Unit },
+                                    parameters = 0,
+                                    binders = null,
+                                ).await()
+                                driver.executeQuery(
+                                    identifier = null,
+                                    sql = "PRAGMA temp_store = MEMORY",
+                                    mapper = { QueryResult.Unit },
+                                    parameters = 0,
+                                    binders = null,
+                                ).await()
+                                driver.executeQuery(
+                                    identifier = null,
+                                    sql = "PRAGMA cache_size = -32000",
+                                    mapper = { QueryResult.Unit },
+                                    parameters = 0,
+                                    binders = null,
+                                ).await()
                                 driver.executeQuery(
                                     identifier = null,
                                     sql = "SELECT 1",
