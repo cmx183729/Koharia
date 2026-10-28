@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -49,6 +50,19 @@ import tachiyomi.domain.manga.model.MangaCover as MangaCoverModel
 object CommonMangaItemDefaults {
     val GridHorizontalSpacer = 4.dp
     val GridVerticalSpacer = 4.dp
+    val GridMinCellWidth = 128.dp
+    const val DefaultMinGridColumns = 1
+    const val DefaultMaxGridColumns = 10
+
+    fun gridCells(
+        columns: Int,
+        minColumns: Int = DefaultMinGridColumns,
+        maxColumns: Int = DefaultMaxGridColumns,
+    ): GridCells = if (columns <= 0) {
+        GridCells.Adaptive(GridMinCellWidth)
+    } else {
+        GridCells.Fixed(columns.coerceIn(minColumns, maxColumns))
+    }
 
     @Suppress("ConstPropertyName")
     const val BrowseFavoriteCoverAlpha = 0.34f

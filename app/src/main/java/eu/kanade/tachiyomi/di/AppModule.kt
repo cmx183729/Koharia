@@ -41,6 +41,7 @@ import koharia.epub.service.LocalEpubPublicationService
 import koharia.epub.session.EpubReaderSessionRepository
 import koharia.komga.api.KomgaActiveServerSseManager
 import koharia.pdf.cache.PdfReflowCacheManager
+import koharia.source.ehentai.EHenApi
 import koharia.source.komga.KomgaConnectionMigration
 import koharia.source.komga.KomgaConnectionProvider
 import koharia.source.komga.KomgaLocalConfigManager
@@ -118,6 +119,20 @@ class AppModule(val app: Application) : InjektModule {
                             // AndroidxSqliteDriver opens lazily. Force the first query here so
                             // migration failures stay inside this guarded startup sequence.
                             runBlocking {
+                                listOf(
+                                    "PRAGMA journal_mode = WAL",
+                                    "PRAGMA synchronous = NORMAL",
+                                    "PRAGMA temp_store = MEMORY",
+                                    "PRAGMA cache_size = -32000",
+                                ).forEach { sql ->
+                                    driver.executeQuery(
+                                        identifier = null,
+                                        sql = sql,
+                                        mapper = { QueryResult.Unit },
+                                        parameters = 0,
+                                        binders = null,
+                                    ).await()
+                                }
                                 driver.executeQuery(
                                     identifier = null,
                                     sql = "SELECT 1",
@@ -275,6 +290,7 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory { LocalCacheCleaner(app, get(), get(), get(), get(), get(), get()) }
 
         addSingletonFactory { NetworkHelper(app, get()) }
+        addSingletonFactory { EHenApi(get<NetworkHelper>().client, get()) }
 
         addSingletonFactory<SourceManager> {
             get<KomgaConnectionMigration>().migrate()

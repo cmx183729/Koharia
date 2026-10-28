@@ -44,11 +44,12 @@ class StorageSnapshot(private val backend: LibraryStorageBackend, private val st
     suspend fun scan(
         path: String,
         refresh: Boolean = false,
+        forceFull: Boolean = false,
         onDirectory: suspend (StorageDirectorySnapshot) -> Unit = {
         },
     ) = scanMutex.withLock {
         val root = StoragePath.normalize(path)
-        var checkpoint = if (refresh) store.get<StorageScanCheckpoint>("scans", root) else null
+        var checkpoint = if (refresh && !forceFull) store.get<StorageScanCheckpoint>("scans", root) else null
         if (refresh && checkpoint == null) {
             checkpoint = StorageScanCheckpoint()
             store.put("scans", root, checkpoint)
@@ -60,7 +61,7 @@ class StorageSnapshot(private val backend: LibraryStorageBackend, private val st
             currentCoroutineContext().ensureActive()
             val next = pending.removeFirst()
             if (!seen.add(next)) continue
-            val directory = directory(next, refresh && next !in checkpoint?.completed.orEmpty())
+            val directory = directory(next, refresh && (forceFull || next !in checkpoint?.completed.orEmpty()))
             if (refresh) {
                 checkpoint = StorageScanCheckpoint(checkpoint?.completed.orEmpty() + next)
                 store.put("scans", root, checkpoint)

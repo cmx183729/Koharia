@@ -17,6 +17,8 @@ import koharia.connection.EntryOpenPreferences
 import koharia.connection.SharedAppPreferences
 import koharia.epub.settings.EpubLayoutPreferences
 import koharia.epub.settings.EpubReaderPreferences
+import koharia.scan.ScanPreferences
+import koharia.source.ehentai.EHenPreferences
 import koharia.source.komga.KomgaLibraryClassificationManager
 import koharia.source.komga.KomgaLocalConfigManager
 import koharia.source.komga.KomgaServerPreferences
@@ -62,6 +64,8 @@ class PreferenceModule(val app: Application) : InjektModule {
         addSingletonFactory {
             get<SharedAppPreferences>().store()
         }
+        addSingletonFactory { ScanPreferences(get<ScopedPreferenceStore>()) }
+        addSingletonFactory { EHenPreferences(get<PreferenceStore>()) }
         addSingletonFactory {
             KomgaLibraryClassificationManager(
                 preferenceStore = get<PreferenceStore>(),

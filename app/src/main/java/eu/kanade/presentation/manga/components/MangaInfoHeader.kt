@@ -70,6 +70,10 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -439,6 +443,9 @@ private fun ColumnScope.MangaContentInfo(
     showComicMetadata: Boolean = true,
 ) {
     val context = LocalContext.current
+    val authorLabel = stringResource(MR.strings.author)
+    val unknownAuthorLabel = stringResource(MR.strings.unknown_author)
+    val artistLabel = stringResource(MR.strings.artist)
     Text(
         text = title.ifBlank { stringResource(MR.strings.unknown_title) },
         style = MaterialTheme.typography.titleLarge,
@@ -475,6 +482,10 @@ private fun ColumnScope.MangaContentInfo(
                 ?: stringResource(MR.strings.unknown_author),
             style = MaterialTheme.typography.titleSmall,
             modifier = Modifier
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "$authorLabel: ${author ?: unknownAuthorLabel}"
+                }
                 .clickableNoIndication(
                     onLongClick = {
                         if (!author.isNullOrBlank()) {
@@ -505,6 +516,10 @@ private fun ColumnScope.MangaContentInfo(
                 text = artist,
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = "$artistLabel: $artist"
+                    }
                     .clickableNoIndication(
                         onLongClick = { context.copyToClipboard(artist, artist) },
                         onClick = { doSearch(artist, true) },
@@ -765,7 +780,10 @@ private fun TagsChip(
 ) {
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
         SuggestionChip(
-            modifier = modifier,
+            modifier = modifier.semantics {
+                role = Role.Button
+                contentDescription = text
+            },
             onClick = onClick,
             label = { Text(text = text, style = MaterialTheme.typography.bodySmall) },
         )

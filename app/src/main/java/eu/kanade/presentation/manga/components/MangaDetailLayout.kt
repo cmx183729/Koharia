@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -111,11 +110,7 @@ fun MangaDetailLayout(
             val contents: @Composable () -> Unit = {
                 if (useGrid) {
                     FastScrollLazyVerticalGrid(
-                        columns = if (columns == 0) {
-                            GridCells.Adaptive(128.dp)
-                        } else {
-                            GridCells.Fixed(columns.coerceIn(2, 6))
-                        },
+                        columns = CommonMangaItemDefaults.gridCells(columns, minColumns = 2, maxColumns = 6),
                         modifier = Modifier.fillMaxHeight(),
                         state = gridState,
                         contentPadding = PaddingValues(

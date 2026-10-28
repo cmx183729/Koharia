@@ -3,6 +3,9 @@ package koharia.storage
 import eu.kanade.tachiyomi.network.await
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import logcat.LogPriority
@@ -19,6 +22,8 @@ import okio.BufferedSink
 import okio.source
 import org.w3c.dom.Element
 import tachiyomi.core.common.util.system.logcat
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 import java.io.InputStream
 import java.net.URI
 import java.time.ZonedDateTime
@@ -38,6 +43,10 @@ class WebDavStorageBackend(
         if (it.encodedPath.endsWith('/')) it else it.newBuilder().addPathSegment("").build()
     }
     private val authorization = username.takeIf(String::isNotEmpty)?.let { Credentials.basic(it, password) }
+    private val gateMutex = Mutex()
+    private var activeRequests = 0
+    private var lastRequestAt = 0L
+    private val requestMutex = Mutex()
     override val capabilities = StorageCapabilities(true, true, true, true)
     private fun url(path: String): HttpUrl = root.newBuilder().apply {
         StoragePath.normalize(path).split('/').filter(String::isNotEmpty).forEach(::addPathSegment)
@@ -47,21 +56,57 @@ class WebDavStorageBackend(
         header("Accept-Encoding", "identity")
     }
     private suspend fun execute(request: Request): Response {
-        val response = client.newCall(request).await()
-        if (response.code !in 200..299) {
-            val reason = when (response.code) {
-                401 -> StorageFailure.Reason.AUTH
-                403 -> StorageFailure.Reason.PERMISSION
-                404 -> StorageFailure.Reason.NOT_FOUND
-                409, 412, 423 -> StorageFailure.Reason.CONFLICT
-                405, 501 -> StorageFailure.Reason.UNSUPPORTED
-                507 -> StorageFailure.Reason.SPACE
-                else -> StorageFailure.Reason.NETWORK
+        // Unit tests and early startup may run without the preference graph; fall back to defaults.
+        val scanPreferences = runCatching { Injekt.get<koharia.scan.ScanPreferences>() }.getOrNull()
+        while (true) {
+            val configured = scanPreferences?.webDavConcurrency?.get()
+                ?: koharia.scan.ScanPreferences.DEFAULT_WEBDAV_CONCURRENCY
+            val limit = configured
+                .coerceIn(
+                    koharia.scan.ScanPreferences.MIN_WEBDAV_CONCURRENCY,
+                    koharia.scan.ScanPreferences.MAX_WEBDAV_CONCURRENCY,
+                )
+            val admitted = gateMutex.withLock {
+                if (activeRequests < limit) {
+                    activeRequests++
+                    true
+                } else {
+                    false
+                }
             }
-            response.close()
-            throw StorageFailure(reason)
+            if (admitted) break
+            delay(25)
         }
-        return response
+        try {
+            val intervalMs = (scanPreferences?.webDavRequestIntervalMs?.get() ?: 0)
+                .coerceIn(0, koharia.scan.ScanPreferences.MAX_REQUEST_INTERVAL_MS)
+            if (intervalMs > 0) {
+                requestMutex.withLock {
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    val waitMs = (lastRequestAt + intervalMs - now).coerceAtLeast(0)
+                    if (waitMs > 0) delay(waitMs)
+                    lastRequestAt = android.os.SystemClock.elapsedRealtime()
+                }
+            }
+            val response = client.newCall(request).await()
+            if (response.code !in 200..299) {
+                val reason = when (response.code) {
+                    401 -> StorageFailure.Reason.AUTH
+                    403 -> StorageFailure.Reason.PERMISSION
+                    404 -> StorageFailure.Reason.NOT_FOUND
+                    409, 412, 423 -> StorageFailure.Reason.CONFLICT
+                    405, 501 -> StorageFailure.Reason.UNSUPPORTED
+                    507 -> StorageFailure.Reason.SPACE
+                    else -> StorageFailure.Reason.NETWORK
+                }
+                response.close()
+                throw StorageFailure(reason)
+            }
+            return response
+        } finally {
+            // Releasing the slot must survive cancellation, or the limiter would leak permits.
+            withContext(NonCancellable) { gateMutex.withLock { activeRequests-- } }
+        }
     }
 
     /**

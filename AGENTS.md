@@ -1,5 +1,10 @@
 # Koharia - AI Agent Guide
 
+## Comic Reader Refactor
+
+- For work following the comic-reader-refactor phases, load `.dsh/skills/comic-reader-refactor/SKILL.md` and execute exactly one phase per user approval. Report changed files and verification, then wait before continuing.
+- Preserve Koharia's provider/capability architecture, connection isolation, metadata/cache/download boundaries, E-Ink motion policy, and all data-preservation rules in this guide; do not implement speculative dependencies before confirming the existing stack is insufficient.
+
 Koharia is an Android reader for personal server and local media libraries, forked from Mihon `0.19.9`. It uses Kotlin/JVM 17, Jetpack Compose + Material3, Voyager, SQLDelight, Injekt, and moko-resources. The namespace remains `eu.kanade.tachiyomi`; `applicationId` is `app.koharia`.
 
 ## Mandatory Rules

@@ -1,0 +1,3 @@
+CREATE INDEX mangas_source_title_index ON mangas(source, title COLLATE NOCASE);
+CREATE INDEX chapters_manga_order_index ON chapters(manga_id, source_order, chapter_number);
+CREATE INDEX mangas_last_modified_index ON mangas(last_modified_at);

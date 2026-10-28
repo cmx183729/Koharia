@@ -741,8 +741,7 @@ internal fun KomgaOrganizationKind.titleResource() =
         MR.strings.komga_filter_read_lists
     }
 
-private fun organizationGridColumns(columns: Int): GridCells =
-    if (columns == 0) GridCells.Adaptive(128.dp) else GridCells.Fixed(columns.coerceIn(1, 10))
+private fun organizationGridColumns(columns: Int): GridCells = CommonMangaItemDefaults.gridCells(columns)
 
 internal fun organizationError(context: android.content.Context, error: Throwable): String =
     if (error is KomgaOrganizationException) {

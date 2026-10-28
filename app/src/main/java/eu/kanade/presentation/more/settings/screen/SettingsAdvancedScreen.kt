@@ -27,6 +27,9 @@ import eu.kanade.tachiyomi.util.CrashLogUtil
 import eu.kanade.tachiyomi.util.system.GLUtil
 import eu.kanade.tachiyomi.util.system.powerManager
 import eu.kanade.tachiyomi.util.system.toast
+import koharia.scan.ScanPreferences
+import koharia.source.ehentai.EHenPreferences
+import koharia.source.ehentai.EHenSite
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableMap
 import kotlinx.coroutines.launch
@@ -37,6 +40,7 @@ import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.interactor.ResetViewerFlags
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.presentation.core.util.collectAsState
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -51,6 +55,8 @@ object SettingsAdvancedScreen : SearchableSettings {
         val basePreferences = remember { Injekt.get<BasePreferences>() }
         val networkPreferences = remember { Injekt.get<NetworkPreferences>() }
         val libraryPreferences = remember { Injekt.get<LibraryPreferences>() }
+        val scanPreferences = remember { Injekt.get<ScanPreferences>() }
+        val eHenPreferences = remember { Injekt.get<EHenPreferences>() }
 
         return listOf(
             getAppGroup(),
@@ -58,6 +64,8 @@ object SettingsAdvancedScreen : SearchableSettings {
             getDiagnosticsGroup(networkPreferences),
             getDataGroup(),
             getLibraryGroup(libraryPreferences = libraryPreferences),
+            getScanPerformanceGroup(scanPreferences),
+            getEHenGroup(eHenPreferences),
             getReaderGroup(basePreferences = basePreferences),
         )
     }
@@ -223,6 +231,83 @@ object SettingsAdvancedScreen : SearchableSettings {
                     preference = libraryPreferences.disallowNonAsciiFilenames,
                     title = stringResource(MR.strings.pref_disallow_non_ascii_filenames),
                     subtitle = stringResource(MR.strings.pref_disallow_non_ascii_filenames_details),
+                ),
+            ),
+        )
+    }
+
+    @Composable
+    private fun getScanPerformanceGroup(
+        preferences: ScanPreferences,
+    ): Preference.PreferenceGroup {
+        val webDavConcurrency by preferences.webDavConcurrency.collectAsState()
+        val webDavInterval by preferences.webDavRequestIntervalMs.collectAsState()
+        val scraperInterval by preferences.scraperRequestIntervalMs.collectAsState()
+        val preloadPages by preferences.readerPreloadPages.collectAsState()
+
+        return Preference.PreferenceGroup(
+            title = stringResource(MR.strings.pref_scan_performance),
+            preferenceItems = persistentListOf(
+                Preference.PreferenceItem.SliderPreference(
+                    value = webDavConcurrency.coerceIn(ScanPreferences.MIN_WEBDAV_CONCURRENCY, ScanPreferences.MAX_WEBDAV_CONCURRENCY),
+                    valueRange = ScanPreferences.MIN_WEBDAV_CONCURRENCY..ScanPreferences.MAX_WEBDAV_CONCURRENCY,
+                    title = stringResource(MR.strings.pref_webdav_scan_concurrency),
+                    valueString = webDavConcurrency.toString(),
+                    onValueChanged = { preferences.webDavConcurrency.set(it) },
+                ),
+                Preference.PreferenceItem.SliderPreference(
+                    value = webDavInterval.coerceIn(0, ScanPreferences.MAX_REQUEST_INTERVAL_MS),
+                    valueRange = 0..ScanPreferences.MAX_REQUEST_INTERVAL_MS step ScanPreferences.REQUEST_INTERVAL_STEP_MS,
+                    steps = ScanPreferences.MAX_REQUEST_INTERVAL_MS / ScanPreferences.REQUEST_INTERVAL_STEP_MS - 1,
+                    title = stringResource(MR.strings.pref_webdav_request_interval),
+                    valueString = "${webDavInterval} ms",
+                    onValueChanged = { preferences.webDavRequestIntervalMs.set(it) },
+                ),
+                Preference.PreferenceItem.SliderPreference(
+                    value = scraperInterval.coerceIn(0, ScanPreferences.MAX_REQUEST_INTERVAL_MS),
+                    valueRange = 0..ScanPreferences.MAX_REQUEST_INTERVAL_MS step ScanPreferences.REQUEST_INTERVAL_STEP_MS,
+                    steps = ScanPreferences.MAX_REQUEST_INTERVAL_MS / ScanPreferences.REQUEST_INTERVAL_STEP_MS - 1,
+                    title = stringResource(MR.strings.pref_scraper_request_interval),
+                    valueString = "${scraperInterval} ms",
+                    onValueChanged = { preferences.scraperRequestIntervalMs.set(it) },
+                ),
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = preferences.incrementalScan,
+                    title = stringResource(MR.strings.pref_incremental_scan),
+                ),
+                Preference.PreferenceItem.SliderPreference(
+                    value = preloadPages.coerceIn(ScanPreferences.MIN_READER_PRELOAD_PAGES, ScanPreferences.MAX_READER_PRELOAD_PAGES),
+                    valueRange = ScanPreferences.MIN_READER_PRELOAD_PAGES..ScanPreferences.MAX_READER_PRELOAD_PAGES,
+                    title = stringResource(MR.strings.pref_reader_preload_pages),
+                    valueString = preloadPages.toString(),
+                    onValueChanged = { preferences.readerPreloadPages.set(it) },
+                ),
+            ),
+        )
+    }
+
+    @Composable
+    private fun getEHenGroup(preferences: EHenPreferences): Preference.PreferenceGroup {
+        return Preference.PreferenceGroup(
+            title = stringResource(MR.strings.pref_ehentai),
+            preferenceItems = persistentListOf(
+                Preference.PreferenceItem.ListPreference(
+                    preference = preferences.site,
+                    entries = mapOf(
+                        EHenSite.E_HENTAI to "E-Hentai",
+                        EHenSite.EX_HENTAI to "ExHentai",
+                    ).toImmutableMap(),
+                    title = stringResource(MR.strings.pref_ehentai_site),
+                    subtitleProvider = { value, _ -> value.host },
+                ),
+                Preference.PreferenceItem.EditTextPreference(
+                    preference = preferences.cookie,
+                    title = stringResource(MR.strings.pref_ehentai_cookie),
+                    subtitle = stringResource(MR.strings.pref_ehentai_cookie_summary),
+                ),
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = preferences.translateTags,
+                    title = stringResource(MR.strings.pref_ehentai_translate_tags),
                 ),
             ),
         )

@@ -3040,6 +3040,7 @@ class LocalFolderSource(
         val existingByUrl = mangaRepository.getMangaBySourceId(id).associateBy(Manga::url)
         val metadataOverrides = preferences.getMetadataOverrides()
         val config = preferences.getConfig()
+        val incrementalScan = Injekt.get<koharia.scan.ScanPreferences>().incrementalScan.get()
         val configuredRootIds = config.roots.mapTo(mutableSetOf(), LocalLibraryRootConfig::id)
         val successfulRootIds = mutableSetOf<String>()
         val failedRoots = mutableListOf<LocalLibraryRootConfig>()
@@ -3058,6 +3059,7 @@ class LocalFolderSource(
                                 ).filter(String::isNotEmpty).joinToString("/"),
                             ),
                             refresh = true,
+                            forceFull = !incrementalScan,
                             onDirectory = {
                                 val now = android.os.SystemClock.elapsedRealtime()
                                 if (now - lastPreview >= 500) {
@@ -3156,7 +3158,8 @@ class LocalFolderSource(
                             val url = LocalLibraryLocator.entryUrl(id, candidate.root.id, scannedItem.locatorPath)
                             val existing = existingByUrl[url]
                             val itemKey = scannedItem.itemKey
-                            val unchanged = previousIndex.schemaVersion >= 7 && existing?.initialized == true &&
+                            val unchanged = incrementalScan && previousIndex.schemaVersion >= 7 &&
+                                existing?.initialized == true &&
                                 previousEntriesByKey[itemKey]?.fingerprint == scannedItem.fingerprint
                             if (unchanged &&
                                 config.metadataStorage == LocalMetadataStorage.DATABASE &&
