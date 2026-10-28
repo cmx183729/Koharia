@@ -4,6 +4,7 @@ import eu.kanade.tachiyomi.network.await
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -18,7 +19,10 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okhttp3.ResponseBody
 import okio.BufferedSink
+import okio.BufferedSource
+import okio.ForwardingSource
 import okio.source
 import org.w3c.dom.Element
 import tachiyomi.core.common.util.system.logcat
@@ -77,6 +81,7 @@ class WebDavStorageBackend(
             if (admitted) break
             delay(25)
         }
+        var handedOff = false
         try {
             val intervalMs = (scanPreferences?.webDavRequestIntervalMs?.get() ?: 0)
                 .coerceIn(0, koharia.scan.ScanPreferences.MAX_REQUEST_INTERVAL_MS)
@@ -102,11 +107,58 @@ class WebDavStorageBackend(
                 response.close()
                 throw StorageFailure(reason)
             }
-            return response
-        } finally {
-            // Releasing the slot must survive cancellation, or the limiter would leak permits.
-            withContext(NonCancellable) { gateMutex.withLock { activeRequests-- } }
+            val tracked = response.trackPermit()
+            handedOff = true
+            return tracked
+        } catch (error: Throwable) {
+            if (!handedOff) releasePermitBlocking()
+            throw error
         }
+    }
+
+    private fun Response.trackPermit(): Response {
+        val body = body ?: run {
+            close()
+            throw StorageFailure(StorageFailure.Reason.PROTOCOL)
+        }
+        val trackedBody = object : ResponseBody() {
+            private val released = java.util.concurrent.atomic.AtomicBoolean()
+            private val trackedSource: BufferedSource by lazy {
+                okio.Okio.buffer(object : ForwardingSource(body.source()) {
+                    private fun release() {
+                        if (released.compareAndSet(false, true)) releasePermitAsync()
+                    }
+
+                    override fun read(sink: okio.Buffer, byteCount: Long): Long = try {
+                        super.read(sink, byteCount).also { if (it == -1L) release() }
+                    } catch (error: Throwable) {
+                        release()
+                        throw error
+                    }
+
+                    override fun close() {
+                        try {
+                            super.close()
+                        } finally {
+                            release()
+                        }
+                    }
+                })
+            }
+
+            override fun contentType() = body.contentType()
+            override fun contentLength() = body.contentLength()
+            override fun source(): BufferedSource = trackedSource
+        }
+        return newBuilder().body(trackedBody).build()
+    }
+
+    private fun releasePermitAsync() {
+        releasePermitBlocking()
+    }
+
+    private fun releasePermitBlocking() {
+        runBlocking(NonCancellable) { gateMutex.withLock { activeRequests-- } }
     }
 
     /**
@@ -155,10 +207,11 @@ class WebDavStorageBackend(
             }
             val bytes = response.body.byteStream().readBounded(length)
             if (bytes.size != length) throw StorageFailure(StorageFailure.Reason.PROTOCOL)
+            bytes
+        }.also {
             if (entry.strongEtag() == null && stat(entry.path).version != entry.version) {
                 throw StorageFailure(StorageFailure.Reason.CONFLICT)
             }
-            bytes
         }
     }
     override suspend fun createDirectory(path: String) = withContext(Dispatchers.IO) {
@@ -172,16 +225,12 @@ class WebDavStorageBackend(
                 entry.strongEtag()?.let { header("If-Match", it) }
             }.build(),
         ).use { response ->
-            if (response.body.byteStream().copyTo(output) !=
-                entry.size
-            ) {
+            if (response.body.byteStream().copyTo(output) != entry.size) {
                 throw StorageFailure(StorageFailure.Reason.PROTOCOL)
             }
-            if (entry.strongEtag() == null &&
-                stat(entry.path).version != entry.version
-            ) {
-                throw StorageFailure(StorageFailure.Reason.CONFLICT)
-            }
+        }
+        if (entry.strongEtag() == null && stat(entry.path).version != entry.version) {
+            throw StorageFailure(StorageFailure.Reason.CONFLICT)
         }
     }
     override suspend fun write(

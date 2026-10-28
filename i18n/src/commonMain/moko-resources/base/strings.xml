@@ -404,7 +404,6 @@
     <string name="pref_reader_summary">Reading mode, display, navigation</string>
     <string name="pref_category_comic_reader">Comic Reader</string>
     <string name="pref_comic_reader_summary">Manga reading mode, display, navigation</string>
-    <string name="pref_category_book_reader">Book Reader</string>
     <string name="pref_book_reader_summary">Behavior, typography, layout</string>
     <string name="pref_server_scope">Server scope</string>
     <string name="pref_server_scope_shared">Shared configuration</string>
@@ -673,9 +672,16 @@
     <string name="pref_scan_performance_pending_integration">These values are saved now; scan scheduling and reader preloading will use them in a later phase.</string>
     <string name="pref_ehentai">E-Hentai metadata</string>
     <string name="pref_ehentai_site">Site</string>
+    <string name="pref_ehentai_site_e_hentai">E-Hentai</string>
+    <string name="pref_ehentai_site_ex_hentai">ExHentai</string>
     <string name="pref_ehentai_cookie">Cookie</string>
-    <string name="pref_ehentai_cookie_summary">Private Cookie header for ExHentai access; stored as a private preference.</string>
+    <string name="pref_ehentai_cookie_summary">Paste a Cookie value, for example: igneous=your-value; ipb_member_id=your-value; ipb_pass_hash=your-value. A line beginning with Cookie: and browser-exported Cookie JSON are also accepted. Do not enter your password; this stays in private local preferences.</string>
     <string name="pref_ehentai_translate_tags">Translate common tags to Chinese</string>
+    <string name="pref_ehentai_tag_translation_refresh">Update tag translation data</string>
+    <string name="pref_ehentai_tag_translation_updated">Tag translation data updated (%s)</string>
+    <string name="pref_ehentai_tag_translation_refresh_success">Tag translation data refreshed</string>
+    <string name="pref_ehentai_tag_translation_unavailable">No downloaded tag translation data</string>
+    <string name="pref_ehentai_tag_translation_failed">Could not update tag translation data</string>
     <string name="pref_advanced_rendering">Rendering and compatibility</string>
     <string name="entry_open_reader">Open reader</string>
     <string name="entry_open_page_preview">Page preview</string>
@@ -1637,7 +1643,6 @@
     <string name="migrationListScreen.searchManuallyActionLabel">Search manually</string>
     <string name="migrationListScreen.skipActionLabel">Don\'t migrate</string>
     <string name="migrationListScreen.migrateNowActionLabel">Migrate now</string>
-    <string name="migrationListScreen.copyNowActionLabel">Copy now</string>
     <string name="migrationListScreen.copyNowActionLabel">Copy now</string>
     <string name="migrationListScreen.exitDialogTitle">Stop migrating?</string>
     <string name="migrationListScreen.exitDialog.stopLabel">Stop</string>

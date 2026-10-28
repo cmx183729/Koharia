@@ -42,6 +42,7 @@ import koharia.epub.session.EpubReaderSessionRepository
 import koharia.komga.api.KomgaActiveServerSseManager
 import koharia.pdf.cache.PdfReflowCacheManager
 import koharia.source.ehentai.EHenApi
+import koharia.source.ehentai.EHenTagTranslationService
 import koharia.source.komga.KomgaConnectionMigration
 import koharia.source.komga.KomgaConnectionProvider
 import koharia.source.komga.KomgaLocalConfigManager
@@ -298,6 +299,7 @@ class AppModule(val app: Application) : InjektModule {
 
         addSingletonFactory { NetworkHelper(app, get()) }
         addSingletonFactory { EHenApi(get<NetworkHelper>().client, get()) }
+        addSingletonFactory { EHenTagTranslationService(app, get<NetworkHelper>().client, get()) }
 
         addSingletonFactory<SourceManager> {
             get<KomgaConnectionMigration>().migrate()
@@ -376,6 +378,7 @@ class AppModule(val app: Application) : InjektModule {
 
             startupScope.launch {
                 Injekt.get<NetworkHelper>()
+                Injekt.get<EHenTagTranslationService>().loadCached()
 
                 Injekt.get<ConnectionPreferences>()
                 Injekt.get<KomgaServerPreferences>()

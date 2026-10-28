@@ -42,7 +42,11 @@ class EHenApi(
         val request = Request.Builder()
             .url("https://${preferences.site.get().apiHost}/api.php")
             .header("Accept", "application/json")
-            .apply { preferences.cookie.get().trim().takeIf(String::isNotEmpty)?.let { header("Cookie", it) } }
+            .apply {
+                EHenCookieParser.parse(preferences.cookie.get())
+                    .takeIf(String::isNotEmpty)
+                    ?.let { header("Cookie", it) }
+            }
             .post(body)
             .build()
         client.newCall(request).await().use { response ->
@@ -51,10 +55,10 @@ class EHenApi(
             check(responseBody.contentLength() <= MAX_RESPONSE_BYTES || responseBody.contentLength() == -1L) {
                 "E-Hentai metadata response exceeds size limit"
             }
-            val text = responseBody.source().apply {
-                request(MAX_RESPONSE_BYTES.toLong() + 1)
-            }.buffer.clone().readUtf8()
-            check(text.length <= MAX_RESPONSE_BYTES) { "E-Hentai metadata response exceeds size limit" }
+            val source = responseBody.source()
+            source.request(MAX_RESPONSE_BYTES.toLong() + 1)
+            check(source.buffer.size <= MAX_RESPONSE_BYTES) { "E-Hentai metadata response exceeds size limit" }
+            val text = source.buffer.clone().readUtf8()
             EHenMetadataParser.parse(text, gid, token)
         }
     }

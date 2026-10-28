@@ -31,6 +31,7 @@ import eu.kanade.tachiyomi.util.system.toast
 import koharia.scan.ScanPreferences
 import koharia.source.ehentai.EHenPreferences
 import koharia.source.ehentai.EHenSite
+import koharia.source.ehentai.EHenTagTranslationService
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableMap
 import kotlinx.coroutines.launch
@@ -58,6 +59,7 @@ object SettingsAdvancedScreen : SearchableSettings {
         val libraryPreferences = remember { Injekt.get<LibraryPreferences>() }
         val scanPreferences = remember { Injekt.get<ScanPreferences>() }
         val eHenPreferences = remember { Injekt.get<EHenPreferences>() }
+        val tagTranslationService = remember { Injekt.get<EHenTagTranslationService>() }
 
         return listOf(
             getAppGroup(),
@@ -66,7 +68,7 @@ object SettingsAdvancedScreen : SearchableSettings {
             getDataGroup(),
             getLibraryGroup(libraryPreferences = libraryPreferences),
             getScanPerformanceGroup(scanPreferences),
-            getEHenGroup(eHenPreferences),
+            getEHenGroup(eHenPreferences, tagTranslationService),
             getReaderGroup(basePreferences = basePreferences),
         )
     }
@@ -296,15 +298,21 @@ object SettingsAdvancedScreen : SearchableSettings {
     }
 
     @Composable
-    private fun getEHenGroup(preferences: EHenPreferences): Preference.PreferenceGroup {
+    private fun getEHenGroup(
+        preferences: EHenPreferences,
+        tagTranslationService: EHenTagTranslationService,
+    ): Preference.PreferenceGroup {
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+        val timestamp by preferences.tagTranslationTimestamp.collectAsState()
         return Preference.PreferenceGroup(
             title = stringResource(MR.strings.pref_ehentai),
             preferenceItems = persistentListOf(
                 Preference.PreferenceItem.ListPreference(
                     preference = preferences.site,
                     entries = mapOf(
-                        EHenSite.E_HENTAI to "E-Hentai",
-                        EHenSite.EX_HENTAI to "ExHentai",
+                        EHenSite.E_HENTAI to stringResource(MR.strings.pref_ehentai_site_e_hentai),
+                        EHenSite.EX_HENTAI to stringResource(MR.strings.pref_ehentai_site_ex_hentai),
                     ).toImmutableMap(),
                     title = stringResource(MR.strings.pref_ehentai_site),
                     subtitleProvider = { value, _ -> value.host },
@@ -317,6 +325,25 @@ object SettingsAdvancedScreen : SearchableSettings {
                 Preference.PreferenceItem.SwitchPreference(
                     preference = preferences.translateTags,
                     title = stringResource(MR.strings.pref_ehentai_translate_tags),
+                ),
+                Preference.PreferenceItem.TextPreference(
+                    title = stringResource(MR.strings.pref_ehentai_tag_translation_refresh),
+                    subtitle = if (timestamp.isBlank()) {
+                        stringResource(MR.strings.pref_ehentai_tag_translation_unavailable)
+                    } else {
+                        stringResource(MR.strings.pref_ehentai_tag_translation_updated, timestamp)
+                    },
+                    onClick = {
+                        scope.launch {
+                            val result = tagTranslationService.refresh()
+                            withUIContext {
+                                context.toast(
+                                    if (result.isSuccess) MR.strings.pref_ehentai_tag_translation_refresh_success
+                                    else MR.strings.pref_ehentai_tag_translation_failed,
+                                )
+                            }
+                        }
+                    },
                 ),
             ),
         )

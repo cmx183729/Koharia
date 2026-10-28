@@ -1,11 +1,13 @@
 package koharia.storage
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody
+import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
 import okio.ForwardingSource
 import okio.buffer
@@ -40,6 +42,30 @@ class WebDavResponseDispatchTest {
         assertEquals(StorageFailure.Reason.SPACE, (failure as StorageFailure).reason)
         assertEquals(1, requests)
         assertEquals(true, closed)
+    }
+
+    @Test
+    fun `read releases response permit before fallback version check`() = runBlocking {
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val payload = if (chain.request().method == "PROPFIND") {
+                """
+                <d:multistatus xmlns:d="DAV:"><d:response><d:href>/book</d:href><d:propstat><d:prop>
+                <d:resourcetype/><d:getcontentlength>3</d:getcontentlength>
+                </d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>
+                """.trimIndent()
+            } else {
+                "abc"
+            }
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
+                .code(if (chain.request().method == "PROPFIND") 207 else 200).message("Fixture")
+                .body(payload.toResponseBody("application/octet-stream".toMediaType())).build()
+        }.build()
+        val backend = WebDavStorageBackend(client, "http://fixture.invalid/", "", "")
+        val entry = StorageEntry("book", false, 3, version = "3:0")
+
+        withTimeout(2_000) {
+            assertEquals("abc", backend.read(entry, 0, 3).decodeToString())
+        }
     }
 
     @Test

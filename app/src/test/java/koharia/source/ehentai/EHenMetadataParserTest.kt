@@ -17,6 +17,34 @@ class EHenMetadataParserTest {
         assertEquals(12, result.pageCount)
         assertEquals("https://ehgt.org/t.jpg", result.coverUrl)
         assertEquals(listOf("语言: 日文", "artist: test"), result.toArchiveMetadata().tags)
+        assertEquals("https://e-hentai.org/g/42/abcdef1234/", result.toArchiveMetadata().galleryUrl)
+        assertEquals(
+            "https://exhentai.org/g/42/abcdef1234/",
+            result.toArchiveMetadata(site = EHenSite.EX_HENTAI).galleryUrl,
+        )
+    }
+
+    @Test
+    fun `ignores malformed tag elements without rejecting gallery metadata`() {
+        val json = """
+            {"gmetadata":[{"gid":"42","token":"abcdef1234","title":"English",
+            "tags":["language: japanese",42,null,{"name":"invalid"}]}]}
+        """.trimIndent()
+        val result = EHenMetadataParser.parse(json, 42, "abcdef1234")
+        assertEquals(listOf("语言: 日文"), result.toArchiveMetadata().tags)
+    }
+
+    @Test
+    fun `tag sorting uses locale independent normalization`() {
+        val tags = listOf("language: Japanese", "artist: Test")
+        val expected = EHenTagTranslation.sort(tags, translate = false)
+        val previousLocale = java.util.Locale.getDefault()
+        try {
+            java.util.Locale.setDefault(java.util.Locale.forLanguageTag("tr-TR"))
+            assertEquals(expected, EHenTagTranslation.sort(tags, translate = false))
+        } finally {
+            java.util.Locale.setDefault(previousLocale)
+        }
     }
 
     @Test

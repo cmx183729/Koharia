@@ -1029,6 +1029,25 @@
     <string name="about_dont_kill_my_app">部分厂商杀掉后台服务的现象比较严重，此网站提供了一些解决方法。</string>
     <string name="restore_miui_warning">如果关闭 MIUI 优化，备份与还原可能会出现问题。</string>
     <string name="pref_dark_theme_pure_black">纯黑深色模式</string>
+    <string name="pref_scan_performance">扫描与阅读性能</string>
+    <string name="pref_webdav_scan_concurrency">WebDAV 扫描并发数</string>
+    <string name="pref_webdav_request_interval">WebDAV 请求间隔（毫秒）</string>
+    <string name="pref_scraper_request_interval">爬取请求间隔（毫秒）</string>
+    <string name="pref_incremental_scan">增量扫描</string>
+    <string name="pref_reader_preload_pages">阅读器预加载页数</string>
+    <string name="pref_scan_performance_pending_integration">这些值已保存；扫描调度和阅读器预加载将在后续阶段接入。</string>
+    <string name="pref_ehentai">E-Hentai 元数据</string>
+    <string name="pref_ehentai_site">站点</string>
+    <string name="pref_ehentai_site_e_hentai">E-Hentai</string>
+    <string name="pref_ehentai_site_ex_hentai">ExHentai</string>
+    <string name="pref_ehentai_cookie">Cookie</string>
+    <string name="pref_ehentai_cookie_summary">粘贴 Cookie 值即可，例如：igneous=你的值; ipb_member_id=你的值; ipb_pass_hash=你的值。也可粘贴以 Cookie: 开头的整行。支持浏览器导出的 Cookie JSON（数组或 cookies 字段）。请勿填写账号密码；此内容只保存在本机私有偏好中。</string>
+    <string name="pref_ehentai_translate_tags">将常见标签翻译为中文</string>
+    <string name="pref_ehentai_tag_translation_refresh">更新标签翻译数据</string>
+    <string name="pref_ehentai_tag_translation_updated">标签翻译数据已更新（%s）</string>
+    <string name="pref_ehentai_tag_translation_refresh_success">标签翻译数据已刷新</string>
+    <string name="pref_ehentai_tag_translation_unavailable">尚无已下载的标签翻译数据</string>
+    <string name="pref_ehentai_tag_translation_failed">无法更新标签翻译数据</string>
     <string name="theme_yotsuba">四叶草</string>
     <string name="theme_yinyang">阴阳</string>
     <string name="theme_tako">Tako</string>
@@ -1168,7 +1187,6 @@
     <string name="pref_reader_summary">阅读模式 • 显示 • 翻页</string>
     <string name="pref_category_comic_reader">漫画阅读器</string>
     <string name="pref_comic_reader_summary">漫画阅读模式、显示与翻页</string>
-    <string name="pref_category_book_reader">书籍阅读器</string>
     <string name="pref_book_reader_summary">行为、排版与版式</string>
     <string name="pref_server_scope">服务器作用域</string>
     <string name="pref_server_scope_shared">共享配置</string>
