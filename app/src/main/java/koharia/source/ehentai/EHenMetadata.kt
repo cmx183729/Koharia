@@ -38,7 +38,10 @@ data class EHenGalleryMetadata(
 }
 
 object EHenMetadataParser {
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+    }
 
     fun parse(text: String, expectedGid: Long, expectedToken: String): EHenGalleryMetadata {
         require(text.length <= MAX_RESPONSE_CHARS) { "E-Hentai metadata response exceeds size limit" }

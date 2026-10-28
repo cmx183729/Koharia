@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
@@ -249,7 +250,10 @@ object SettingsAdvancedScreen : SearchableSettings {
             title = stringResource(MR.strings.pref_scan_performance),
             preferenceItems = persistentListOf(
                 Preference.PreferenceItem.SliderPreference(
-                    value = webDavConcurrency.coerceIn(ScanPreferences.MIN_WEBDAV_CONCURRENCY, ScanPreferences.MAX_WEBDAV_CONCURRENCY),
+                    value = webDavConcurrency.coerceIn(
+                        ScanPreferences.MIN_WEBDAV_CONCURRENCY,
+                        ScanPreferences.MAX_WEBDAV_CONCURRENCY,
+                    ),
                     valueRange = ScanPreferences.MIN_WEBDAV_CONCURRENCY..ScanPreferences.MAX_WEBDAV_CONCURRENCY,
                     title = stringResource(MR.strings.pref_webdav_scan_concurrency),
                     valueString = webDavConcurrency.toString(),
@@ -257,18 +261,20 @@ object SettingsAdvancedScreen : SearchableSettings {
                 ),
                 Preference.PreferenceItem.SliderPreference(
                     value = webDavInterval.coerceIn(0, ScanPreferences.MAX_REQUEST_INTERVAL_MS),
-                    valueRange = 0..ScanPreferences.MAX_REQUEST_INTERVAL_MS step ScanPreferences.REQUEST_INTERVAL_STEP_MS,
+                    valueRange =
+                    0..ScanPreferences.MAX_REQUEST_INTERVAL_MS step ScanPreferences.REQUEST_INTERVAL_STEP_MS,
                     steps = ScanPreferences.MAX_REQUEST_INTERVAL_MS / ScanPreferences.REQUEST_INTERVAL_STEP_MS - 1,
                     title = stringResource(MR.strings.pref_webdav_request_interval),
-                    valueString = "${webDavInterval} ms",
+                    valueString = "$webDavInterval ms",
                     onValueChanged = { preferences.webDavRequestIntervalMs.set(it) },
                 ),
                 Preference.PreferenceItem.SliderPreference(
                     value = scraperInterval.coerceIn(0, ScanPreferences.MAX_REQUEST_INTERVAL_MS),
-                    valueRange = 0..ScanPreferences.MAX_REQUEST_INTERVAL_MS step ScanPreferences.REQUEST_INTERVAL_STEP_MS,
+                    valueRange =
+                    0..ScanPreferences.MAX_REQUEST_INTERVAL_MS step ScanPreferences.REQUEST_INTERVAL_STEP_MS,
                     steps = ScanPreferences.MAX_REQUEST_INTERVAL_MS / ScanPreferences.REQUEST_INTERVAL_STEP_MS - 1,
                     title = stringResource(MR.strings.pref_scraper_request_interval),
-                    valueString = "${scraperInterval} ms",
+                    valueString = "$scraperInterval ms",
                     onValueChanged = { preferences.scraperRequestIntervalMs.set(it) },
                 ),
                 Preference.PreferenceItem.SwitchPreference(
@@ -276,7 +282,10 @@ object SettingsAdvancedScreen : SearchableSettings {
                     title = stringResource(MR.strings.pref_incremental_scan),
                 ),
                 Preference.PreferenceItem.SliderPreference(
-                    value = preloadPages.coerceIn(ScanPreferences.MIN_READER_PRELOAD_PAGES, ScanPreferences.MAX_READER_PRELOAD_PAGES),
+                    value = preloadPages.coerceIn(
+                        ScanPreferences.MIN_READER_PRELOAD_PAGES,
+                        ScanPreferences.MAX_READER_PRELOAD_PAGES,
+                    ),
                     valueRange = ScanPreferences.MIN_READER_PRELOAD_PAGES..ScanPreferences.MAX_READER_PRELOAD_PAGES,
                     title = stringResource(MR.strings.pref_reader_preload_pages),
                     valueString = preloadPages.toString(),

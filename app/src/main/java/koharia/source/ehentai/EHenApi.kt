@@ -26,9 +26,17 @@ class EHenApi(
         require(gid > 0 && token.matches(Regex("[0-9a-fA-F]{10,}"))) { "Invalid gallery identity" }
         val body = buildJsonObject {
             put("method", "gdata")
-            put("gidlist", buildJsonArray {
-                add(buildJsonObject { put("gid", gid); put("token", token) })
-            })
+            put(
+                "gidlist",
+                buildJsonArray {
+                    add(
+                        buildJsonObject {
+                            put("gid", gid)
+                            put("token", token)
+                        },
+                    )
+                },
+            )
             put("namespace", 1)
         }.toString().toRequestBody(JSON)
         val request = Request.Builder()
@@ -43,7 +51,9 @@ class EHenApi(
             check(responseBody.contentLength() <= MAX_RESPONSE_BYTES || responseBody.contentLength() == -1L) {
                 "E-Hentai metadata response exceeds size limit"
             }
-            val text = responseBody.source().apply { request(MAX_RESPONSE_BYTES.toLong() + 1) }.buffer.clone().readUtf8()
+            val text = responseBody.source().apply {
+                request(MAX_RESPONSE_BYTES.toLong() + 1)
+            }.buffer.clone().readUtf8()
             check(text.length <= MAX_RESPONSE_BYTES) { "E-Hentai metadata response exceeds size limit" }
             EHenMetadataParser.parse(text, gid, token)
         }

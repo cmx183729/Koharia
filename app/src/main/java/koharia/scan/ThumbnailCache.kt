@@ -8,7 +8,9 @@ import java.security.MessageDigest
 
 /** Persistent WebP thumbnail files with a bounded, file-backed LRU policy. */
 class ThumbnailCache(private val directory: File, private val maxBytes: Long) {
-    init { check(directory.mkdirs() || directory.isDirectory) }
+    init {
+        check(directory.mkdirs() || directory.isDirectory)
+    }
 
     fun get(key: String): File? {
         val file = fileFor(key)
@@ -38,7 +40,11 @@ class ThumbnailCache(private val directory: File, private val maxBytes: Long) {
     private fun evict() {
         var used = directory.listFiles().orEmpty().filter { it.isFile && it.extension == "webp" }.sumOf { it.length() }
         while (used > maxBytes) {
-            val oldest = directory.listFiles().orEmpty().filter { it.isFile && it.extension == "webp" }.minByOrNull { it.lastModified() } ?: break
+            val oldest =
+                directory.listFiles().orEmpty().filter {
+                    it.isFile && it.extension == "webp"
+                }.minByOrNull { it.lastModified() }
+                    ?: break
             used -= oldest.length()
             oldest.delete()
         }

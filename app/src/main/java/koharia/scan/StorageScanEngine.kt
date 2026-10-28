@@ -24,7 +24,7 @@ class StorageScanEngine(
     suspend fun scan(root: String, forceFull: Boolean = false): List<ScannedStorageItem> = withContext(Dispatchers.IO) {
         val gate = Semaphore(concurrency.coerceIn(1, 16))
         val result = mutableListOf<ScannedStorageItem>()
-        suspend fun visit(path: String) = coroutineScope {
+        suspend fun visit(path: String): Unit = coroutineScope {
             val entries = backend.list(path)
             entries.filter { it.directory }.forEach { visit(it.path) }
             entries.filterNot { it.directory }.map { entry ->
@@ -54,14 +54,21 @@ class StorageScanEngine(
 }
 
 data class ScanFingerprint(val size: Long, val modifiedAt: Long, val version: String)
-data class ScannedStorageItem(val path: String, val fingerprint: ScanFingerprint, val metadata: ArchiveMetadata?, val archive: Boolean)
+data class ScannedStorageItem(
+    val path: String,
+    val fingerprint: ScanFingerprint,
+    val metadata: ArchiveMetadata?,
+    val archive: Boolean,
+)
 
 private class ZipRangeDirectory private constructor(
     private val backend: LibraryStorageBackend,
     private val entry: StorageEntry,
     private val records: Map<String, Record>,
 ) {
-    suspend fun readFirst(name: String): ByteArray? = records.entries.firstOrNull { it.key.substringAfterLast('/').equals(name, true) }
+    suspend fun readFirst(
+        name: String,
+    ): ByteArray? = records.entries.firstOrNull { it.key.substringAfterLast('/').equals(name, true) }
         ?.value?.let { read(it) }
 
     private suspend fun read(record: Record): ByteArray {
@@ -72,7 +79,9 @@ private class ZipRangeDirectory private constructor(
         val compressed = backend.read(entry, record.offset + 30 + nameLength + extraLength, record.compressedSize)
         val output = when (record.method) {
             0 -> compressed
-            8 -> InflaterInputStream(ByteArrayInputStream(compressed), java.util.zip.Inflater(true)).use { it.readBounded(MAX_ENTRY_BYTES) }
+            8 -> InflaterInputStream(ByteArrayInputStream(compressed), java.util.zip.Inflater(true)).use {
+                it.readBounded(MAX_ENTRY_BYTES)
+            }
             else -> error("Unsupported ZIP compression method")
         }
         check(output.size <= MAX_ENTRY_BYTES) { "Archive metadata exceeds the supported size" }
@@ -91,13 +100,17 @@ private class ZipRangeDirectory private constructor(
             val count = us(tail, eocd + 10)
             val centralSize = uint(tail, eocd + 12)
             val centralOffset = uint(tail, eocd + 16)
-            check(centralSize <= 16L * 1024 * 1024 && centralOffset + centralSize <= entry.size) { "Invalid ZIP directory bounds" }
+            check(centralSize <= 16L * 1024 * 1024 && centralOffset + centralSize <= entry.size) {
+                "Invalid ZIP directory bounds"
+            }
             val central = backend.read(entry, centralOffset, centralSize.toInt())
             check(central.size.toLong() == centralSize) { "Truncated ZIP directory" }
             var cursor = 0
             val records = buildMap {
                 repeat(count) {
-                    check(cursor >= 0 && cursor + 46 <= central.size && le(central, cursor) == 0x02014b50) { "Invalid ZIP central directory" }
+                    check(cursor >= 0 && cursor + 46 <= central.size && le(central, cursor) == 0x02014b50) {
+                        "Invalid ZIP central directory"
+                    }
                     val method = us(central, cursor + 10)
                     val compressed = uint(central, cursor + 20).toInt()
                     val nameLength = us(central, cursor + 28)
@@ -105,7 +118,9 @@ private class ZipRangeDirectory private constructor(
                     val commentLength = us(central, cursor + 32)
                     val localOffset = uint(central, cursor + 42)
                     val recordEnd = cursor + 46 + nameLength + extraLength + commentLength
-                    check(recordEnd <= central.size && localOffset < entry.size && compressed >= 0) { "Invalid ZIP entry bounds" }
+                    check(recordEnd <= central.size && localOffset < entry.size && compressed >= 0) {
+                        "Invalid ZIP entry bounds"
+                    }
                     val name = central.copyOfRange(cursor + 46, cursor + 46 + nameLength).toString(Charsets.UTF_8)
                     put(name, Record(localOffset, compressed, method))
                     cursor = recordEnd
@@ -115,7 +130,10 @@ private class ZipRangeDirectory private constructor(
         }
         private fun le(b: ByteArray, o: Int) = (us(b, o) or (us(b, o + 2) shl 16))
         private fun us(b: ByteArray, o: Int) = (b[o].toInt() and 255) or ((b[o + 1].toInt() and 255) shl 8)
-        private fun uint(b: ByteArray, o: Int) = (us(b, o).toLong() or (us(b, o + 2).toLong() shl 16)).coerceAtMost(Int.MAX_VALUE.toLong())
+        private fun uint(
+            b: ByteArray,
+            o: Int,
+        ) = (us(b, o).toLong() or (us(b, o + 2).toLong() shl 16)).coerceAtMost(Int.MAX_VALUE.toLong())
         private data class Record(val offset: Long, val compressedSize: Int, val method: Int)
     }
 }

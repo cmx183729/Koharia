@@ -28,7 +28,10 @@ data class ArchiveMetadata(
 
 object ArchiveMetadataParser {
     private val gidToken = Regex("/g/(\\d+)/(\\p{XDigit}{10,})/?", RegexOption.IGNORE_CASE)
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+    }
 
     fun comicInfo(xml: ByteArray): ArchiveMetadata {
         require(xml.size <= MAX_METADATA_BYTES) { "ComicInfo.xml exceeds the supported size" }
@@ -60,7 +63,9 @@ object ArchiveMetadataParser {
         val link = url?.let(gidToken::find)
         return ArchiveMetadata(
             title = value("title"), genres = splitValues(value("category")), tags = splitValues(value("tags")),
-            pageCount = value("pageCount")?.toIntOrNull(), galleryUrl = url, coverUrl = value("coverUrl") ?: value("cover_url"),
+            pageCount = value("pageCount")?.toIntOrNull(), galleryUrl = url,
+            coverUrl =
+            value("coverUrl") ?: value("cover_url"),
             uploader = value("uploader"), publishTime = value("publishTime") ?: value("publish_time"),
             gid = value("gid")?.toLongOrNull() ?: link?.groupValues?.get(1)?.toLongOrNull(),
             token = value("token") ?: link?.groupValues?.get(2),
@@ -68,6 +73,8 @@ object ArchiveMetadataParser {
     }
 
     private fun String?.clean() = this?.replace(Regex("[\\u0000-\\u001f]"), "")?.trim()?.takeIf(String::isNotEmpty)
-    private fun splitValues(value: String?) = value?.split(',', ';')?.map(String::trim)?.filter(String::isNotEmpty).orEmpty()
+    private fun splitValues(
+        value: String?,
+    ) = value?.split(',', ';')?.map(String::trim)?.filter(String::isNotEmpty).orEmpty()
     private const val MAX_METADATA_BYTES = 2 * 1024 * 1024
 }
