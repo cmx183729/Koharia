@@ -30,9 +30,9 @@ data class JsExtensionManifest(
         if (!ID_PATTERN.matches(id)) add("id must contain only lowercase letters, digits, '.', '_' or '-'")
         if (name.trim().isEmpty()) add("name must not be blank")
         if (version.trim().isEmpty()) add("version must not be blank")
-        validateHttpsUrl(scriptUrl, "script_url", ::add)
+        validateHttpsUrl(scriptUrl, "script_url")?.let(::add)
         if (!SHA256_PATTERN.matches(sha256)) add("sha256 must be 64 lowercase hexadecimal characters")
-        homepage?.let { validateHttpsUrl(it, "homepage", ::add) }
+        homepage?.let { validateHttpsUrl(it, "homepage")?.let(::add) }
         if (capabilities.toSet().size != capabilities.size) add("capabilities must not contain duplicates")
     }
 
@@ -40,10 +40,12 @@ data class JsExtensionManifest(
         private val ID_PATTERN = Regex("[a-z0-9][a-z0-9._-]{1,63}")
         private val SHA256_PATTERN = Regex("[0-9a-f]{64}")
 
-        private fun validateHttpsUrl(value: String, field: String, errors: MutableList<String>) {
+        private fun validateHttpsUrl(value: String, field: String): String? {
             val uri = runCatching { URI(value) }.getOrNull()
-            if (uri?.scheme != "https" || uri.host.isNullOrBlank() || uri.userInfo != null) {
-                errors += "$field must be an https URL with a host and no user info"
+            return if (uri?.scheme != "https" || uri.host.isNullOrBlank() || uri.userInfo != null) {
+                "$field must be an https URL with a host and no user info"
+            } else {
+                null
             }
         }
     }

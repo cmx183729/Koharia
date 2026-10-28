@@ -23,6 +23,7 @@ import okhttp3.ResponseBody
 import okio.BufferedSink
 import okio.BufferedSource
 import okio.ForwardingSource
+import okio.buffer
 import okio.source
 import org.w3c.dom.Element
 import tachiyomi.core.common.util.system.logcat
@@ -124,7 +125,7 @@ class WebDavStorageBackend(
         val trackedBody = object : ResponseBody() {
             private val released = java.util.concurrent.atomic.AtomicBoolean()
             private val trackedSource: BufferedSource by lazy {
-                okio.Okio.buffer(object : ForwardingSource(body.source()) {
+                (object : ForwardingSource(body.source()) {
                     private fun release() {
                         if (released.compareAndSet(false, true)) releasePermitAsync()
                     }
@@ -143,7 +144,7 @@ class WebDavStorageBackend(
                             release()
                         }
                     }
-                })
+                }).buffer()
             }
 
             override fun contentType() = body.contentType()
