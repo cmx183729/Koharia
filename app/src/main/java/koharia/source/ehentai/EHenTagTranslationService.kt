@@ -7,16 +7,9 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
-import java.util.Locale
 
 /** Downloads and caches the versioned EhTagTranslation database without coupling it to UI. */
 class EHenTagTranslationService(
@@ -92,59 +85,11 @@ class EHenTagTranslationService(
         }
     }
 
-    private fun parse(text: String): ParsedData {
-        val root = json.parseToJsonElement(text).jsonObject
-        val timestamp = root["head"]?.jsonObject?.get("committer")?.jsonObject
-            ?.get("when")?.jsonPrimitive?.contentOrNull.orEmpty()
-        val entries = buildMap {
-            val namespaces = root["data"] as? JsonArray ?: JsonArray(emptyList())
-            namespaces.forEach { namespaceElement ->
-                val namespaceObject = namespaceElement.jsonObject
-                val namespace = namespaceObject["namespace"]?.jsonPrimitive?.contentOrNull ?: return@forEach
-                val tags = namespaceObject["data"]?.jsonObject ?: return@forEach
-                tags.forEach { (key, value) ->
-                    val rawName = value.jsonObject["name"]?.jsonPrimitive?.contentOrNull
-                        ?: return@forEach
-                    val translated = parseTagName(rawName)
-                    if (translated != null) {
-                        val translatedNamespace = namespaceDisplayName(namespace)
-                        put("$namespace: $key", "$translatedNamespace: $translated")
-                    }
-                }
-            }
-        }
-        check(entries.isNotEmpty()) { "Tag translation response contains no entries" }
-        return ParsedData(timestamp.ifBlank { "downloaded" }, entries)
-    }
-
-    private fun parseTagName(rawName: String): String? {
-        val translatedName = org.jsoup.Jsoup.parse(rawName).text().trim()
-        return translatedName.takeIf(String::isNotBlank)
-    }
-
-    private fun namespaceDisplayName(namespace: String): String = when (namespace.lowercase(Locale.ROOT)) {
-        "language" -> "语言"
-        "artist" -> "作者"
-        "character" -> "角色"
-        "female" -> "女性"
-        "male" -> "男性"
-        "parody" -> "原作"
-        "group" -> "团队"
-        "mixed" -> "混合"
-        "cosplayer" -> "角色扮演者"
-        "reclass" -> "重新分类"
-        "temp" -> "临时"
-        "other" -> "其他"
-        "location" -> "地点"
-        else -> namespace
-    }
-
-    private data class ParsedData(val timestamp: String, val entries: Map<String, String>)
+    private fun parse(text: String) = EHenTagTranslationDatabaseParser.parse(text)
 
     companion object {
         private const val DOWNLOAD_URL = "https://fastly.jsdelivr.net/gh/EhTagTranslation/DatabaseReleases/db.html.json"
         private const val CACHE_FILE_NAME = "ehentai-tag-translation.json"
         private const val MAX_BYTES = 16 * 1024 * 1024
-        private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     }
 }

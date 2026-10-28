@@ -1,6 +1,7 @@
 package koharia.source.ehentai
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class EHenTagTranslationTest {
@@ -128,6 +129,40 @@ class EHenTagTranslationTest {
     @Test
     fun `empty tag filters match every item`() {
         assertEquals(true, EHenTagTranslation.matches(listOf("artist: test")))
+    }
+
+    @Test
+    fun `parses translation database namespace data objects`() {
+        val parsed = EHenTagTranslationDatabaseParser.parse(
+            """
+                {
+                  "head":{"committer":{"when":"2026-10-28T14:36:55.000Z"}},
+                  "data":[
+                    {"namespace":"language","count":1,"data":{"afrikaans":{"name":"<p>南非语</p>","intro":"description","links":""}}},
+                    {"namespace":"female","data":{"schoolgirl uniform":{"name":"<p>女学生制服</p>"}}}
+                  ]
+                }
+            """.trimIndent(),
+        )
+
+        assertEquals("2026-10-28T14:36:55.000Z", parsed.timestamp)
+        assertEquals("语言: 南非语", parsed.entries["language: afrikaans"])
+        assertEquals("女性: 女学生制服", parsed.entries["female: schoolgirl uniform"])
+    }
+
+    @Test
+    fun `skips malformed entries while parsing translation database`() {
+        val parsed = EHenTagTranslationDatabaseParser.parse(
+            """
+                {"data":[
+                  {"namespace":"language","data":{"valid":{"name":"<p>有效</p>"},"invalid":false}},
+                  {"namespace":"female","data":{"missing_name":{"intro":"no name"}}},
+                  {"namespace":"","data":{"ignored":{"name":"ignored"}}}
+                ]}
+            """.trimIndent(),
+        )
+
+        assertEquals(mapOf("language: valid" to "语言: 有效"), parsed.entries)
     }
 
     @Test
