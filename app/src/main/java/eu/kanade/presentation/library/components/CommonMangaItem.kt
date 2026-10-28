@@ -51,13 +51,13 @@ object CommonMangaItemDefaults {
     val GridHorizontalSpacer = 4.dp
     val GridVerticalSpacer = 4.dp
     val GridMinCellWidth = 128.dp
-    const val DefaultMinGridColumns = 1
-    const val DefaultMaxGridColumns = 10
+    const val DEFAULT_MIN_GRID_COLUMNS = 1
+    const val DEFAULT_MAX_GRID_COLUMNS = 10
 
     fun gridCells(
         columns: Int,
-        minColumns: Int = DefaultMinGridColumns,
-        maxColumns: Int = DefaultMaxGridColumns,
+        minColumns: Int = DEFAULT_MIN_GRID_COLUMNS,
+        maxColumns: Int = DEFAULT_MAX_GRID_COLUMNS,
     ): GridCells = if (columns <= 0) {
         GridCells.Adaptive(GridMinCellWidth)
     } else {

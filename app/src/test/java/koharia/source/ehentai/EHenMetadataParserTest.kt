@@ -7,7 +7,11 @@ import org.junit.jupiter.api.Test
 class EHenMetadataParserTest {
     @Test
     fun `parses matching gallery and translates tags`() {
-        val json = """{"gmetadata":[{"gid":"42","token":"abcdef1234","title":"English","title_jpn":"日本語","uploader":"user","category":"Manga","posted":"1700000000","filecount":"12","rating":"4.5","thumb":"https://ehgt.org/t.jpg","tags":["language: japanese","artist: test"]}]}"""
+        val json = """
+            {"gmetadata":[{"gid":"42","token":"abcdef1234","title":"English","title_jpn":"日本語",
+            "uploader":"user","category":"Manga","posted":"1700000000","filecount":"12","rating":"4.5",
+            "thumb":"https://ehgt.org/t.jpg","tags":["language: japanese","artist: test"]}]}
+        """.trimIndent()
         val result = EHenMetadataParser.parse(json, 42, "abcdef1234")
         assertEquals("English", result.title)
         assertEquals(12, result.pageCount)
