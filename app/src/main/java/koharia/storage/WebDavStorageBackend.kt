@@ -185,22 +185,21 @@ class WebDavStorageBackend(
     override suspend fun stat(path: String): StorageEntry =
         properties(path, "0").firstOrNull { it.path == StoragePath.normalize(path) }
             ?: throw StorageFailure(StorageFailure.Reason.NOT_FOUND)
-    override suspend fun list(path: String): List<StorageEntry> {
+    override suspend fun list(path: String): List<StorageEntry> = listDirectory(path).children
+    override suspend fun listDirectory(path: String): StorageDirectoryListing {
         val normalized = StoragePath.normalize(path)
         val result = properties(normalized, "1")
         val self = result.firstOrNull { it.path == normalized }
-        if (self == null) {
             // Some DAV servers omit the requested collection from Depth: 1 responses.
-            if (!stat(normalized).directory) throw StorageFailure(StorageFailure.Reason.PROTOCOL)
-            if (result.any { StoragePath.parent(it.path) != normalized && it.path != normalized }) {
-                throw StorageFailure(StorageFailure.Reason.PROTOCOL)
-            }
-        } else if (!self.directory) {
+            ?: stat(normalized)
+        if (!self.directory) throw StorageFailure(StorageFailure.Reason.PROTOCOL)
+        if (result.any { it.path != normalized && StoragePath.parent(it.path) != normalized }) {
             throw StorageFailure(StorageFailure.Reason.PROTOCOL)
         }
-        return result.filter {
-            it.path != normalized && StoragePath.parent(it.path) == normalized
-        }.distinctBy { it.path }
+        return StorageDirectoryListing(
+            self,
+            result.filter { it.path != normalized }.distinctBy { it.path },
+        )
     }
     override suspend fun read(entry: StorageEntry, offset: Long, length: Int): ByteArray = withContext(Dispatchers.IO) {
         require(offset >= 0 && length >= 0 && offset <= entry.size && length.toLong() <= entry.size - offset)

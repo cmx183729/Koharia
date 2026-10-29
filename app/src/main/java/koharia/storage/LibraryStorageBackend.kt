@@ -21,6 +21,8 @@ data class StorageEntry(
     val name: String get() = path.substringAfterLast('/')
 }
 
+data class StorageDirectoryListing(val directory: StorageEntry, val children: List<StorageEntry>)
+
 data class StorageCapabilities(
     val writable: Boolean,
     val ranges: Boolean,
@@ -58,6 +60,9 @@ interface LibraryStorageBackend : Closeable {
     val capabilities: StorageCapabilities
     suspend fun stat(path: String): StorageEntry
     suspend fun list(path: String): List<StorageEntry>
+
+    /** Null retains separate stat/list calls when combined directory metadata is unavailable. */
+    suspend fun listDirectory(path: String): StorageDirectoryListing? = null
 
     /** Returns exactly the requested bytes, or fails. Never silently treats a full response as a range. */
     suspend fun read(entry: StorageEntry, offset: Long, length: Int): ByteArray

@@ -38,7 +38,18 @@ internal class LocalScanDirectoryReader(private val context: Context, private va
         ) {
             return@getOrPut emptyList()
         }
-        val files = if (treeUri != null) {
+        val files = if (directory is com.hippo.unifile.RemoteStorageFile) {
+            directory.runtime.cachedChildren(directory.storagePath)
+                ?.map { entry ->
+                    LocalScanFile(
+                        directory.runtime.file(entry.path),
+                        entry.name,
+                        entry.directory,
+                        entry.size,
+                        entry.modifiedAt,
+                    )
+                } ?: throw IOException("Unable to list cached remote directory")
+        } else if (treeUri != null) {
             treeUris[directory.uri] = treeUri
             listDocuments(uri, treeUri)
         } else {
@@ -48,14 +59,16 @@ internal class LocalScanDirectoryReader(private val context: Context, private va
         files
     }
 
-    private fun isDirectoryEntry(
+    internal fun isDirectoryEntry(
         treeUri: Uri,
         documentId: String,
         mimeType: String?,
         file: UniFile,
     ): Boolean {
-        if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR || file.isDirectory) return true
+        if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR) return true
+        // The listing already supplied a concrete MIME type; avoid a Binder stat for every page.
         if (!shouldProbeDirectoryChildren(mimeType)) return false
+        if (file.isDirectory) return true
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
         return runCatching {
             context.contentResolver.query(

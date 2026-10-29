@@ -54,6 +54,29 @@ class StorageProtocolTest {
         }
     }
 
+    @Test fun `DAV snapshot uses one depth one request and warm reads use none`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setResponseCode(207).setBody(
+                    """<d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response><d:response><d:href>/dav/1.jpg</d:href><d:propstat><d:prop><d:resourcetype/><d:getcontentlength>12</d:getcontentlength></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>""",
+                ),
+            )
+            val backend = WebDavStorageBackend(OkHttpClient(), server.url("/dav/").toString(), "", "")
+            val session = StorageSession(1, "fixture", "root") { true }
+            val routed = StorageEndpointRouter(backend, null, { null }, {})
+            val snapshot = StorageSnapshot(
+                SessionStorageBackend(ReadOnlyStorageBackend(routed), session),
+                StorageRecordStore(session, MemoryStorageRepository(), kotlinx.serialization.json.Json),
+            )
+            val initial = snapshot.directory("")
+            assertTrue(initial.directory.directory)
+            assertEquals(listOf("1.jpg"), initial.children.map { it.path })
+            assertEquals(initial, snapshot.directory(""))
+            assertEquals("1", server.takeRequest().getHeader("Depth"))
+            assertEquals(1, server.requestCount())
+        }
+    }
+
     @Test fun `DAV refuses entity declarations and responses outside root`() {
         val base = "https://example.test/dav/".toHttpUrl()
         val entity = """<!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///missing">]><root>&xxe;</root>"""
@@ -125,8 +148,10 @@ private class MockResponse {
 private class MockWebServer : java.io.Closeable {
     private val responses = java.util.concurrent.LinkedBlockingQueue<MockResponse>()
     private val requests = java.util.concurrent.LinkedBlockingQueue<com.sun.net.httpserver.Headers>()
+    private val count = java.util.concurrent.atomic.AtomicInteger()
     private val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0).apply {
         createContext("/") { exchange ->
+            count.incrementAndGet()
             requests.add(exchange.requestHeaders)
             val response =
                 responses.poll(5, java.util.concurrent.TimeUnit.SECONDS) ?: MockResponse().setResponseCode(500)
@@ -138,6 +163,7 @@ private class MockWebServer : java.io.Closeable {
         }
         start()
     }
+    fun requestCount(): Int = count.get()
     fun enqueue(response: MockResponse) {
         responses.add(response)
     }

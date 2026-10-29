@@ -1,6 +1,11 @@
 package koharia.source.local
 
 import android.net.Uri
+import android.provider.DocumentsContract
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -8,7 +13,14 @@ import org.junit.jupiter.api.Test
 class SafUriExtensionsTest {
     @Test
     fun `content tree uri is recognized independently of provider metadata`() {
-        assertTrue(Uri.parse("content://com.android.externalstorage.documents/tree/primary%3ADownload").isSafTreeUri())
+        val uri = mockk<Uri> { every { scheme } returns "content" }
+        mockkStatic(DocumentsContract::class)
+        try {
+            every { DocumentsContract.isTreeUri(uri) } returns true
+            assertTrue(uri.isSafTreeUri())
+        } finally {
+            unmockkStatic(DocumentsContract::class)
+        }
     }
 
     @Test
@@ -28,9 +40,15 @@ class SafUriExtensionsTest {
 
     @Test
     fun `non tree uri is not treated as saf directory`() {
-        assertFalse(
-            Uri.parse("content://com.android.externalstorage.documents/document/primary%3ADownload").isSafTreeUri(),
-        )
-        assertFalse(Uri.parse("file:///sdcard/Download").isSafTreeUri())
+        val document = mockk<Uri> { every { scheme } returns "content" }
+        val file = mockk<Uri> { every { scheme } returns "file" }
+        mockkStatic(DocumentsContract::class)
+        try {
+            every { DocumentsContract.isTreeUri(document) } returns false
+            assertFalse(document.isSafTreeUri())
+            assertFalse(file.isSafTreeUri())
+        } finally {
+            unmockkStatic(DocumentsContract::class)
+        }
     }
 }

@@ -79,6 +79,7 @@ class StorageEndpointRouter(
     }
     override suspend fun stat(path: String) = readOnly { it.stat(path) }
     override suspend fun list(path: String) = readOnly { it.list(path) }
+    override suspend fun listDirectory(path: String) = readOnly { it.listDirectory(path) }
     override suspend fun read(
         entry: StorageEntry,
         offset: Long,

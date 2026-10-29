@@ -23,9 +23,10 @@ class StorageSnapshot(private val backend: LibraryStorageBackend, private val st
         return mutex.withLock {
             val saved = store.get<StorageDirectorySnapshot>("directories", normalized)
             if (saved != null && !refresh) return@withLock saved
-            val info = backend.stat(normalized)
-            if (!info.directory) throw StorageFailure(StorageFailure.Reason.PROTOCOL)
-            val entries = backend.list(normalized)
+            val listing = backend.listDirectory(normalized)
+            val info = listing?.directory ?: backend.stat(normalized)
+            if (!info.directory || info.path != normalized) throw StorageFailure(StorageFailure.Reason.PROTOCOL)
+            val entries = listing?.children ?: backend.list(normalized)
             require(entries.all { StoragePath.parent(it.path) == normalized && it.path != normalized })
             val result = StorageDirectorySnapshot(info, entries, System.currentTimeMillis())
             store.put("directories", normalized, result)

@@ -23,6 +23,7 @@ class SessionStorageBackend(
 
     override suspend fun stat(path: String) = active { delegate.stat(path) }
     override suspend fun list(path: String) = active { delegate.list(path) }
+    override suspend fun listDirectory(path: String) = active { delegate.listDirectory(path) }
     override suspend fun read(
         entry: StorageEntry,
         offset: Long,

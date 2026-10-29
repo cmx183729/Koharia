@@ -1302,9 +1302,7 @@ class LocalFolderSource(
             ?.let { storedManga -> getChaptersByMangaId.await(storedManga.id) }
             .orEmpty()
             .associateBy(Chapter::url)
-        if (indexedItem?.kind == LocalLibraryItem.Kind.FILE_ENTRY ||
-            (indexedItem?.kind == LocalLibraryItem.Kind.FOLDER && indexedItem.imageComic)
-        ) {
+        if (indexedItem?.isSingleReadingUnit() == true) {
             val chapterUrl = LocalLibraryLocator.chapterUrl(
                 id,
                 resource.root.id,
@@ -1312,6 +1310,7 @@ class LocalFolderSource(
                     ?: resource.relativePath,
             )
             val modifiedAt = resource.file.lastModified()
+            indexedItem?.let { preferences.clearPendingChapterRefresh(it.itemKey) }
             return@withIOContext listOf(
                 SChapter.create().apply {
                     url = chapterUrl
@@ -1769,8 +1768,7 @@ class LocalFolderSource(
 
     internal fun isIndividualFileEntry(mangaUrl: String): Boolean {
         val item = indexedEntry(mangaUrl) ?: return false
-        return item.kind == LocalLibraryItem.Kind.FILE_ENTRY ||
-            (item.kind == LocalLibraryItem.Kind.FOLDER && item.imageComic)
+        return item.isSingleReadingUnit()
     }
 
     internal fun isFolderContainer(mangaUrl: String): Boolean {
@@ -2275,9 +2273,7 @@ class LocalFolderSource(
                     .filter(String::isNotBlank).joinToString("/")
             }?.itemKey ?: return@mapNotNull null
             val item = indexedItems[itemKey] ?: return@mapNotNull null
-            val progress = if (item.kind == LocalLibraryItem.Kind.FILE_ENTRY ||
-                (item.kind == LocalLibraryItem.Kind.FOLDER && item.imageComic)
-            ) {
+            val progress = if (item.isSingleReadingUnit()) {
                 LocalReadProgressIndex(
                     indexedChapterCount = 1,
                     isIndividualFile = true,
@@ -2304,8 +2300,7 @@ class LocalFolderSource(
     }
 
     private fun LocalLibraryItem.isReadProgressLeaf(): Boolean {
-        return kind == LocalLibraryItem.Kind.FILE_ENTRY ||
-            (kind == LocalLibraryItem.Kind.FOLDER && imageComic)
+        return isSingleReadingUnit()
     }
 
     private fun LocalLibraryIndex.folderReadProgressDescendants(): Map<String, Set<String>> {
@@ -2731,6 +2726,8 @@ class LocalFolderSource(
     }
 
     private fun scanImage(entry: LocalScanFile): Boolean = !entry.directory &&
+        !entry.name.equals("ametadata", ignoreCase = true) &&
+        !entry.name.equals("ametadata.json", ignoreCase = true) &&
         (
             LocalMediaFormats.isImage(entry.extension) ||
                 (
@@ -2754,10 +2751,14 @@ class LocalFolderSource(
             .filterNot { isLocalAuxiliaryFile(it.name) }
         val files = entries.filterNot { it.directory }
         val images = files.filter(::scanImage)
+        val imageUris = images.mapTo(hashSetOf()) { it.file.uri }
         return FolderImageScan(
             entries = entries,
             images = images,
-            pureImages = images.size >= 2 && images.size == files.size,
+            pureImages = isLocalImageComicFolder(
+                images.size,
+                files.any { it.file.uri !in imageUris && it.extension in SUPPORTED_FILE_EXTENSIONS },
+            ),
         )
     }
 
@@ -2782,11 +2783,11 @@ class LocalFolderSource(
             }
             val storedOverride = marker?.imageComicOverride
                 ?: preferences.getIndex().itemsByLocation[root.config.id to path]?.imageComicOverride
-            val imageSeriesEnabled = path.isNotEmpty() && storedOverride != false
-            if (path.isNotEmpty()) {
+            val imageSeriesEnabled = storedOverride != false
+            if (path.isNotEmpty() || folderImages.pureImages) {
                 val hasDirectories = folderImages.entries.any(LocalScanFile::directory)
                 val imageSeriesMarker = marker?.copy(id = "${marker.id}:image-series")
-                if (!folderImages.pureImages || hasDirectories || !imageSeriesEnabled) {
+                if (path.isNotEmpty() && (!folderImages.pureImages || hasDirectories || !imageSeriesEnabled)) {
                     result += ScanCandidate(
                         root.config,
                         directory,
@@ -2801,7 +2802,9 @@ class LocalFolderSource(
                 if (folderImages.pureImages && imageSeriesEnabled) {
                     val parentPath = path.substringBeforeLast('/', "")
                     val name = path.substringAfterLast('/')
-                    val imagePath = if (hasDirectories) {
+                    val imagePath = if (path.isEmpty()) {
+                        ".koharia-image-series"
+                    } else if (hasDirectories) {
                         "$path/.koharia-image-series"
                     } else {
                         listOf(parentPath, ".koharia-image-series-$name")
@@ -2892,6 +2895,8 @@ class LocalFolderSource(
                         files = rootEntries.map { it.file },
                         chapterFiles = rootChapters.map { it.file },
                         attributes = reader.attributes,
+                        pureImages = scanFolderImages(root.directory, reader).pureImages &&
+                            rootChapters.none(LocalScanFile::directory),
                     ),
                 )
             }
@@ -2923,6 +2928,8 @@ class LocalFolderSource(
                     files = files.map { it.file },
                     chapterFiles = chapters.map { it.file },
                     attributes = reader.attributes,
+                    pureImages = scanFolderImages(directory.file, reader).pureImages &&
+                        chapters.none(LocalScanFile::directory),
                     marker = runCatching {
                         metadataStore.folderMarker(
                             directory.file,
@@ -2958,8 +2965,9 @@ class LocalFolderSource(
                     attributes = reader.attributes,
                 )
             }
+            val imageUris = directImages.mapTo(hashSetOf()) { it.file.uri }
             val supportedMedia = children.filter {
-                !it.directory &&
+                !it.directory && it.file.uri !in imageUris &&
                     it.extension in supportedExtensions(root.config.contentType)
             }
             val filesByName = children.filterNot { it.directory }.associateBy { it.name.lowercase() }
@@ -3487,7 +3495,8 @@ class LocalFolderSource(
             .filter { it.kind == LocalLibraryItem.Kind.SERIES && !it.missing }
             .mapTo(mutableSetOf(), LocalLibraryItem::itemKey)
         val changedSeriesKeys = currentSeriesKeys.filterTo(mutableSetOf()) { itemKey ->
-            previousChapterSignatures[itemKey] != currentChapterSignatures[itemKey]
+            previousChapterSignatures[itemKey] != currentChapterSignatures[itemKey] ||
+                previousIndex.itemsByKey[itemKey]?.imageComic != currentIndex.itemsByKey[itemKey]?.imageComic
         }
         return currentIndex.copy(
             pendingChapterRefreshItemKeys = (
