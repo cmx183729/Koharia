@@ -4,6 +4,7 @@ import android.app.Application
 import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.network.await
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -45,7 +46,7 @@ class EHenTagTranslationService(
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
         } catch (primaryError: Exception) {
-            ensureActive()
+            currentCoroutineContext().ensureActive()
             try {
                 download(FALLBACK_DOWNLOAD_URL)
             } catch (error: kotlinx.coroutines.CancellationException) {
@@ -67,7 +68,7 @@ class EHenTagTranslationService(
             .get()
             .build()
         return client.newCall(request).await().use { response ->
-            ensureActive()
+            currentCoroutineContext().ensureActive()
             check(response.isSuccessful) { "Tag translation request failed: HTTP ${response.code}" }
             val body = response.body ?: error("Empty tag translation response")
             check(body.contentLength() <= MAX_BYTES || body.contentLength() == -1L) {
@@ -75,7 +76,7 @@ class EHenTagTranslationService(
             }
             val source = body.source()
             source.request(MAX_BYTES.toLong() + 1L)
-            ensureActive()
+            currentCoroutineContext().ensureActive()
             val bytes = source.buffer.clone().readByteArray()
             check(bytes.size <= MAX_BYTES) { "Tag translation response exceeds size limit" }
             bytes.decodeToString()
