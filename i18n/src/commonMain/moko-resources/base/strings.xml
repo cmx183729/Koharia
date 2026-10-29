@@ -1744,6 +1744,8 @@
     <string name="local_library_no_directories_summary">Add a folder for an enabled content type, or create the enabled folders inside one parent folder.</string>
     <string name="local_library_add_existing">Add existing directory</string>
     <string name="local_library_add_existing_summary">Choose a comic or book folder that Koharia should scan without moving its files.</string>
+    <string name="local_library_scan_selected_directory">Scan the selected directory directly</string>
+    <string name="local_library_scan_selected_directory_summary">Use the selected folder as this shelf root. Koharia will not create Comics or Books subfolders.</string>
     <string name="local_library_create_managed">Create library directories</string>
     <string name="local_library_create_managed_summary">Choose a location. A Comics or Books subfolder will be created for this library, together with a metadata directory.</string>
     <string name="local_library_metadata_group">Metadata</string>
@@ -1808,6 +1810,7 @@
     <string name="metadata_source_filename">From item filename</string>
     <string name="metadata_source_mobi">From MOBI metadata</string>
     <string name="metadata_source_comicinfo">From archive ComicInfo.xml</string>
+    <string name="metadata_source_jhentai_ametadata">From JHenTai ametadata.json</string>
     <string name="metadata_source_chapter">From chapter metadata (suggestion only)</string>
     <string name="metadata_source_sidecar">From this item\'s sidecar</string>
     <string name="metadata_source_override">From saved local edits</string>

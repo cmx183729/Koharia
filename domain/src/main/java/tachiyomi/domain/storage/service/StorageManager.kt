@@ -41,13 +41,7 @@ class StorageManager(
             .distinctUntilChanged()
             .onEach { uri ->
                 baseDir = getBaseDir(uri)
-                baseDir?.let { parent ->
-                    parent.createDirectory(AUTOMATIC_BACKUPS_PATH)
-                    parent.createDirectory(LOCAL_SOURCE_PATH)
-                    parent.createDirectory(DOWNLOADS_PATH).also {
-                        DiskUtil.createNoMediaFile(it, context)
-                    }
-                }
+                invalidateDownloadsDirectoryCache()
                 _changes.send(Unit)
             }
             .launchIn(scope)
@@ -65,7 +59,9 @@ class StorageManager(
     fun getDownloadsDirectory(): UniFile? {
         return synchronized(downloadsDirectoryLock) {
             val root = baseDir
-            val directory = root?.createDirectory(DOWNLOADS_PATH)
+            val directory = root?.createDirectory(DOWNLOADS_PATH).also {
+                DiskUtil.createNoMediaFile(it, context)
+            }
             cachedDownloadsDirectory = if (root != null && directory != null && root.uri.scheme != "file") {
                 CachedDownloadsDirectory(root, directory, currentTimeMillis())
             } else {

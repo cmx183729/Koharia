@@ -28,7 +28,9 @@ class SafUriExtensionsTest {
 
     @Test
     fun `non tree uri is not treated as saf directory`() {
-        assertFalse(Uri.parse("content://com.android.externalstorage.documents/document/primary%3ADownload").isSafTreeUri())
+        assertFalse(
+            Uri.parse("content://com.android.externalstorage.documents/document/primary%3ADownload").isSafTreeUri(),
+        )
         assertFalse(Uri.parse("file:///sdcard/Download").isSafTreeUri())
     }
 }

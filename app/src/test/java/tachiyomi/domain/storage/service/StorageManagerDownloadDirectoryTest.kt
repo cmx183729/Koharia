@@ -3,14 +3,21 @@ package tachiyomi.domain.storage.service
 import android.content.Context
 import android.net.Uri
 import com.hippo.unifile.UniFile
+import eu.kanade.tachiyomi.util.storage.DiskUtil
 import io.mockk.every
+import io.mockk.justRun
 import io.mockk.mockk
+import io.mockk.mockkObject
 import io.mockk.mockkStatic
+import io.mockk.unmockkObject
 import io.mockk.unmockkStatic
 import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -41,6 +48,8 @@ class StorageManagerDownloadDirectoryTest {
     @BeforeEach
     fun setUp() {
         mockkStatic(Uri::class, UniFile::class)
+        mockkObject(DiskUtil)
+        justRun { DiskUtil.createNoMediaFile(any(), any()) }
         directory = mockk()
         root = root("first", directory)
         every { preference.get() } returns "first"
@@ -55,6 +64,7 @@ class StorageManagerDownloadDirectoryTest {
     fun tearDown() {
         changes.close()
         unmockkStatic(Uri::class, UniFile::class)
+        unmockkObject(DiskUtil)
     }
 
     @Test
@@ -156,6 +166,43 @@ class StorageManagerDownloadDirectoryTest {
         every { root.createDirectory("downloads") } returns recreated
         assertSame(recreated, manager.getDownloadsDirectoryForRead())
         verify(exactly = 2) { root.createDirectory("downloads") }
+    }
+
+    @Test
+    fun `selecting a global storage root does not eagerly create unused directories`() = runBlocking {
+        val second = root("second", mockk())
+        val manager = manager()
+        withTimeout(5_000) { observing.await() }
+        val changed = async(start = CoroutineStart.UNDISPATCHED) { manager.changes.first() }
+        changes.send("second")
+        withTimeout(5_000) { changed.await() }
+
+        verify(exactly = 0) { root.createDirectory(any()) }
+        verify(exactly = 0) { second.createDirectory(any()) }
+        verify(exactly = 0) { root.delete() }
+        verify(exactly = 0) { second.delete() }
+    }
+
+    @Test
+    fun `backup and local directories are created only by their explicit consumers`() {
+        val backup = mockk<UniFile>()
+        val local = mockk<UniFile>()
+        every { root.createDirectory("autobackup") } returns backup
+        every { root.createDirectory("local") } returns local
+        val manager = manager()
+
+        assertSame(backup, manager.getAutomaticBackupsDirectory())
+        assertSame(local, manager.getLocalSourceDirectory())
+        verify(exactly = 1) { root.createDirectory("autobackup") }
+        verify(exactly = 1) { root.createDirectory("local") }
+        verify(exactly = 0) { root.createDirectory("downloads") }
+    }
+
+    @Test
+    fun `creating downloads still adds media scanner protection`() {
+        val manager = manager()
+        assertSame(directory, manager.getDownloadsDirectory())
+        verify(exactly = 1) { DiskUtil.createNoMediaFile(directory, context) }
     }
 
     private fun manager() = StorageManager(context, preferences, clock::get)

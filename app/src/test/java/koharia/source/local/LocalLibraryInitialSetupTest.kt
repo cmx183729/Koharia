@@ -49,6 +49,34 @@ class LocalLibraryInitialSetupTest {
     }
 
     @Test
+    fun `a directly selected root can be represented without a managed subdirectory`() {
+        val result = config.copy(
+            enabledContentTypes = setOf(LocalLibraryContentType.COMICS),
+        ).withDirectlySelectedRoot(
+            treeUri = "content://selected",
+            displayPath = "Selected",
+            contentType = LocalLibraryContentType.COMICS,
+        )
+        val root = result.roots.single()
+        assertEquals("", root.relativePath)
+        assertFalse(root.managed)
+        assertEquals("content://selected", root.treeUri)
+        assertEquals(LocalLibraryContentType.COMICS, root.contentType)
+        assertEquals(result.defaultBookshelfId(LocalLibraryContentType.COMICS), root.bookshelfId)
+    }
+
+    @Test
+    fun `direct root selection rejects a shared root for multiple content types`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            config.withDirectlySelectedRoot(
+                treeUri = "content://selected",
+                displayPath = "Selected",
+                contentType = LocalLibraryContentType.COMICS,
+            )
+        }
+    }
+
+    @Test
     fun `only enabled libraries require a mode and both disabled cannot continue`() {
         val comics = config.copy(enabledContentTypes = setOf(LocalLibraryContentType.COMICS))
         val books = config.copy(enabledContentTypes = setOf(LocalLibraryContentType.BOOKS))

@@ -137,6 +137,7 @@ class LocalFolderSettingsScreen(
             mutableStateOf(!createInitialDirectories)
         }
         var isPreparingDirectories by remember { mutableStateOf(false) }
+        var useSelectedDirectory by rememberSaveable(sourceId) { mutableStateOf(false) }
         var selectedDefaultShelfIds by rememberSaveable(sourceId) { mutableStateOf(emptyList<String>()) }
         val defaultModesChosen = config.hasSelectedDefaultModes(selectedDefaultShelfIds)
         var connectionName by rememberSaveable(sourceId) { mutableStateOf(profileName) }
@@ -316,6 +317,7 @@ class LocalFolderSettingsScreen(
                                 defaultLocalDirectory,
                                 directoryDisplayPath(context, Uri.parse(defaultLocalDirectory)),
                                 json,
+                                useSelectedDirectory = useSelectedDirectory,
                             )
                         }
                         initialDirectoriesCreated = true
@@ -758,6 +760,34 @@ class LocalFolderSettingsScreen(
                                     if (remoteMode) choosingDefaultRoot = true else pickStorageDirectory.launch(null)
                                 },
                             )
+                        }
+                        if (!remoteMode && config.enabledContentTypes.count {
+                                it != LocalLibraryContentType.MIXED
+                            } == 1
+                        ) {
+                            item {
+                                ListItem(
+                                    modifier = Modifier.toggleable(
+                                        value = useSelectedDirectory,
+                                        enabled = !isSaving && !isPreparingDirectories,
+                                        role = Role.Checkbox,
+                                        onValueChange = { useSelectedDirectory = it },
+                                    ),
+                                    headlineContent = {
+                                        Text(stringResource(MR.strings.local_library_scan_selected_directory))
+                                    },
+                                    supportingContent = {
+                                        Text(stringResource(MR.strings.local_library_scan_selected_directory_summary))
+                                    },
+                                    leadingContent = {
+                                        Checkbox(
+                                            checked = useSelectedDirectory,
+                                            onCheckedChange = null,
+                                            enabled = !isSaving && !isPreparingDirectories,
+                                        )
+                                    },
+                                )
+                            }
                         }
                         if (config.roots.isNotEmpty()) {
                             item {

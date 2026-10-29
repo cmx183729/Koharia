@@ -25,7 +25,10 @@ class EHenPreferences(private val store: PreferenceStore) {
 
 object EHenCookieParser {
     private val json = Json { ignoreUnknownKeys = true }
-    private val COOKIE_METADATA_KEYS = setOf("path", "domain", "expires", "expirationDate", "httpOnly", "secure", "sameSite", "storeId", "hostOnly", "session", "id")
+    private val COOKIE_METADATA_KEYS = setOf(
+        "path", "domain", "expires", "expirationDate", "httpOnly", "secure",
+        "sameSite", "storeId", "hostOnly", "session", "id",
+    )
 
     fun parse(input: String): String {
         val value = input.trim()
@@ -73,13 +76,17 @@ object EHenCookieParser {
                             ?.contentOrNull
                             ?.let { value -> "$name=$value" }
                     }
-                nameValueCookie ?: element.mapNotNull { (name, cookieValue) ->
-                    (cookieValue as? JsonPrimitive)
-                        ?.takeIf { it.isString && name !in COOKIE_METADATA_KEYS }
-                        ?.contentOrNull
-                        ?.takeIf { name.isNotBlank() }
-                        ?.let { "$name=$it" }
-                }.takeIf(List<String>::isNotEmpty)?.joinToString("; ")
+                nameValueCookie ?: if ("name" in element || "value" in element) {
+                    ""
+                } else {
+                    element.mapNotNull { (name, cookieValue) ->
+                        (cookieValue as? JsonPrimitive)
+                            ?.takeIf { it.isString && name !in COOKIE_METADATA_KEYS }
+                            ?.contentOrNull
+                            ?.takeIf { name.isNotBlank() }
+                            ?.let { "$name=$it" }
+                    }.takeIf(List<String>::isNotEmpty)?.joinToString("; ")
+                }
             }
         }
         else -> null

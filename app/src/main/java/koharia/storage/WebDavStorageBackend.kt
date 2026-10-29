@@ -125,26 +125,28 @@ class WebDavStorageBackend(
         val trackedBody = object : ResponseBody() {
             private val released = java.util.concurrent.atomic.AtomicBoolean()
             private val trackedSource: BufferedSource by lazy {
-                (object : ForwardingSource(body.source()) {
-                    private fun release() {
-                        if (released.compareAndSet(false, true)) releasePermitAsync()
-                    }
+                (
+                    object : ForwardingSource(body.source()) {
+                        private fun release() {
+                            if (released.compareAndSet(false, true)) releasePermitAsync()
+                        }
 
-                    override fun read(sink: okio.Buffer, byteCount: Long): Long = try {
-                        super.read(sink, byteCount).also { if (it == -1L) release() }
-                    } catch (error: Throwable) {
-                        release()
-                        throw error
-                    }
-
-                    override fun close() {
-                        try {
-                            super.close()
-                        } finally {
+                        override fun read(sink: okio.Buffer, byteCount: Long): Long = try {
+                            super.read(sink, byteCount).also { if (it == -1L) release() }
+                        } catch (error: Throwable) {
                             release()
+                            throw error
+                        }
+
+                        override fun close() {
+                            try {
+                                super.close()
+                            } finally {
+                                release()
+                            }
                         }
                     }
-                }).buffer()
+                    ).buffer()
             }
 
             override fun contentType() = body.contentType()

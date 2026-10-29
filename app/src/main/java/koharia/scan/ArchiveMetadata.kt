@@ -55,6 +55,18 @@ object ArchiveMetadataParser {
         )
     }
 
+    fun ametadata(input: java.io.InputStream): ArchiveMetadata {
+        val output = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            require(output.size() + count <= MAX_METADATA_BYTES) { "ametadata exceeds the supported size" }
+            output.write(buffer, 0, count)
+        }
+        return ametadata(output.toByteArray())
+    }
+
     fun ametadata(bytes: ByteArray): ArchiveMetadata {
         require(bytes.size <= MAX_METADATA_BYTES) { "ametadata exceeds the supported size" }
         val root = json.parseToJsonElement(bytes.toString(StandardCharsets.UTF_8)).jsonObject

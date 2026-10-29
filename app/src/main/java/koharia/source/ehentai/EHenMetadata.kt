@@ -118,7 +118,7 @@ object EHenTagTranslation {
 
     fun toChinese(tag: String): String {
         val normalized = normalize(tag)
-        return translations[normalized] ?: tag.trim()
+        return translations[normalized] ?: tag.trim().replace(Regex("\\s+"), " ")
     }
 
     fun classify(tag: String, translate: Boolean = true): EHenTag {
@@ -140,7 +140,11 @@ object EHenTagTranslation {
         .distinct()
 
     /** Returns true when every required tag is present and no excluded tag is present. */
-    fun matches(tags: Iterable<String>, required: Iterable<String> = emptyList(), excluded: Iterable<String> = emptyList()): Boolean {
+    fun matches(
+        tags: Iterable<String>,
+        required: Iterable<String> = emptyList(),
+        excluded: Iterable<String> = emptyList(),
+    ): Boolean {
         val available = tags.map(::normalize).filter(String::isNotBlank).toSet()
         val mustHave = required.map(::normalize).filter(String::isNotBlank).toSet()
         val mustNotHave = excluded.map(::normalize).filter(String::isNotBlank).toSet()

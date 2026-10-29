@@ -17,7 +17,9 @@ class EHenTagTranslationTest {
     fun `extracts browser cookie export JSON`() {
         assertEquals(
             "igneous=abc; ipb_member_id=123",
-            EHenCookieParser.parse("[{\"name\":\"igneous\",\"value\":\"abc\"},{\"name\":\"ipb_member_id\",\"value\":\"123\"}]"),
+            EHenCookieParser.parse(
+                "[{\"name\":\"igneous\",\"value\":\"abc\"},{\"name\":\"ipb_member_id\",\"value\":\"123\"}]",
+            ),
         )
     }
 
@@ -41,7 +43,9 @@ class EHenTagTranslationTest {
     fun `ignores metadata fields in browser cookie export object`() {
         assertEquals(
             "igneous=abc",
-            EHenCookieParser.parse("{\"igneous\":\"abc\",\"httpOnly\":true,\"path\":\"/\",\"domain\":\"e-hentai.org\"}"),
+            EHenCookieParser.parse(
+                "{\"igneous\":\"abc\",\"httpOnly\":true,\"path\":\"/\",\"domain\":\"e-hentai.org\"}",
+            ),
         )
     }
 
@@ -81,7 +85,7 @@ class EHenTagTranslationTest {
                 EHenTagTranslation.sort(listOf("female: schoolgirl uniform", "original work", "language: Japanese")),
             )
             assertEquals(
-                listOf("female: schoolgirl uniform", "language: Japanese", "original work"),
+                listOf("language: Japanese", "female: schoolgirl uniform", "original work"),
                 EHenTagTranslation.sort(
                     listOf("female: schoolgirl uniform", "original work", "language: Japanese"),
                     translate = false,

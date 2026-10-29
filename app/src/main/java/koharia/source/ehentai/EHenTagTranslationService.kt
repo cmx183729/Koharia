@@ -120,7 +120,8 @@ class EHenTagTranslationService(
 
     companion object {
         private const val DOWNLOAD_URL = "https://fastly.jsdelivr.net/gh/EhTagTranslation/DatabaseReleases/db.html.json"
-        private const val FALLBACK_DOWNLOAD_URL = "https://raw.githubusercontent.com/EhTagTranslation/DatabaseReleases/master/db.html.json"
+        private const val FALLBACK_DOWNLOAD_URL =
+            "https://raw.githubusercontent.com/EhTagTranslation/DatabaseReleases/master/db.html.json"
         private const val CACHE_FILE_NAME = "ehentai-tag-translation.json"
         private const val MAX_BYTES = 16 * 1024 * 1024
     }

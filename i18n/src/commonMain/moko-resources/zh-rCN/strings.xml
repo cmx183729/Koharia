@@ -1606,6 +1606,8 @@
     <string name="local_library_no_directories_summary">可以为已启用的内容类型添加目录，也可以在一个总目录中创建已启用的目录。</string>
     <string name="local_library_add_existing">添加已有目录</string>
     <string name="local_library_add_existing_summary">选择供 Koharia 扫描的漫画或书籍目录，不会移动其中的文件。</string>
+    <string name="local_library_scan_selected_directory">直接扫描所选目录</string>
+    <string name="local_library_scan_selected_directory_summary">将所选文件夹直接用作此书架的扫描根目录，不创建 Comics 或 Books 子目录。</string>
     <string name="local_library_create_managed">创建书库目录</string>
     <string name="local_library_create_managed_summary">选择存放位置，将为当前书库创建 Comics 或 Books 子目录及元数据目录。</string>
     <string name="local_library_metadata_group">元数据</string>
@@ -1670,6 +1672,7 @@
     <string name="metadata_source_filename">来自项目文件名</string>
     <string name="metadata_source_mobi">来自 MOBI 内嵌元数据</string>
     <string name="metadata_source_comicinfo">来自压缩包内 ComicInfo.xml</string>
+    <string name="metadata_source_jhentai_ametadata">来自 JHenTai ametadata.json</string>
     <string name="metadata_source_chapter">来自章节元数据（仅供建议）</string>
     <string name="metadata_source_sidecar">来自此项目的专属侧车文件</string>
     <string name="metadata_source_override">来自已保存的本地编辑</string>

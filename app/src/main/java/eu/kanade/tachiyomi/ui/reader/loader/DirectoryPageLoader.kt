@@ -9,12 +9,17 @@ import tachiyomi.core.common.util.system.ImageUtil
 /**
  * Loader used to load a chapter from a directory given on [file].
  */
-internal class DirectoryPageLoader(val file: UniFile, private val excludeAuxiliary: Boolean = false) : PageLoader() {
+internal class DirectoryPageLoader(
+    val file: UniFile,
+    private val excludeAuxiliary: Boolean = false,
+    private val filesProvider: (suspend () -> List<UniFile>)? = null,
+) : PageLoader() {
 
     override var isLocal: Boolean = true
 
     override suspend fun getPages(): List<ReaderPage> {
-        val files = file.listFiles().orEmpty().mapNotNull { child ->
+        val children = filesProvider?.invoke() ?: file.listFiles().orEmpty().toList()
+        val files = children.mapNotNull { child ->
             val name = child.name.orEmpty()
             child.takeIf {
                 !it.isDirectory &&

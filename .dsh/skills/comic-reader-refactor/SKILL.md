@@ -23,6 +23,10 @@ description: Project-local rules for the Koharia comic reader refactor, covering
 ## Metadata and library behavior
 
 - Prefer structured parsers for `ComicInfo.xml` and `ametadata`; validate malformed, missing, and oversized input.
+- JHenTai archive exports use an extensionless `ametadata` JSON file; also accept `ametadata.json`. Bound reads before allocating the whole payload, retain namespaced tags, and avoid applying a parent folder's metadata to unrelated individual files. Metadata suggestions must respect saved local edits and locked fields.
+- Folder-image reader regression coverage must exercise all pages and natural ordering, not merely discovery of the first image. Keep page streams lazy and propagate enumeration errors/cancellation rather than silently falling back to a partial directory list.
+- Selecting a global storage root must not eagerly create unused backup/local/download directories. Preserve on-demand consumer resolution, download `.nomedia` protection, and existing directory contents; do not mistake this limited behavior for complete storage consolidation.
+- Pending product requirements: consolidate downloads/autobackup/local storage under the selected global storage root without moving or deleting existing data implicitly; avoid per-library clutter; modernize shared UI/settings with conditional E-Ink adaptation and legible translucent styling. Treat these as unfinished until integrated and verified, not as released behavior.
 - WebDAV/local scanning must be incremental where possible, bounded by explicit concurrency and request-delay settings, and must not block the UI thread.
 - Use HTTP Range requests only when the backend supports them; preserve a correct fallback for servers that do not.
 - Persist generated thumbnail files and make shelf rendering read local thumbnails asynchronously. Apply configured size, quality, natural ordering, and double-page crop rules deterministically.

@@ -21,10 +21,20 @@ class ArchiveMetadataParserTest {
     }
 
     @Test
+    fun `bounds ametadata streams before parsing`() {
+        val bytes = """{"title":"Stream gallery","tags":"artist:test"}""".encodeToByteArray()
+        assertEquals("Stream gallery", ArchiveMetadataParser.ametadata(bytes.inputStream()).title)
+        assertThrows(IllegalArgumentException::class.java) {
+            ArchiveMetadataParser.ametadata(ByteArray(2 * 1024 * 1024 + 1).inputStream())
+        }
+    }
+
+    @Test
     fun `parses ametadata and rejects oversized metadata`() {
         val result = ArchiveMetadataParser.ametadata(
             """{"gid":42,"token":"abcdef1234","title":"Test","category":"Manga","pageCount":12,
-            "coverUrl":"https://example.test/a.webp","tags":"artist:a,language:chinese"}""".trimIndent().encodeToByteArray(),
+            "coverUrl":"https://example.test/a.webp","tags":"artist:a,language:chinese"}
+            """.trimIndent().encodeToByteArray(),
         )
         assertEquals(42L, result.gid)
         assertEquals("https://example.test/a.webp", result.coverUrl)

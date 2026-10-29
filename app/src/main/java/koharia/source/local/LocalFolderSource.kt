@@ -1801,6 +1801,15 @@ class LocalFolderSource(
         }
     }
 
+    /** Enumerates reader pages through the scan snapshot so SAF providers cannot return a partial list. */
+    internal suspend fun listReaderImageFiles(directory: UniFile): List<UniFile> = withIOContext {
+        val reader = LocalScanDirectoryReader(context)
+        reader.list(directory)
+            .filterNot { isLocalAuxiliaryFile(it.name) }
+            .filter { !it.directory && scanImage(it) }
+            .map(LocalScanFile::file)
+    }
+
     internal fun folderRoots(): List<LocalLibraryRootConfig> = preferences.getConfig().let { config ->
         config.roots.filter { config.organizationMode(it) == LocalLibraryOrganizationMode.FOLDER }
     }
@@ -2503,6 +2512,23 @@ class LocalFolderSource(
         }
         sidecar(COMIC_INFO_FILE)?.let { metadataStore.readStandard(it, LocalLibraryContentType.COMICS) }
             ?.let { add(LocalMetadataCandidate(it.toLibraryMetadata(), MetadataSuggestionSource.SIDECAR)) }
+        val galleryMetadata = sidecar("ametadata.json") ?: sidecar("ametadata") ?: if (
+            role == LocalMetadataRole.FOLDER_IMAGE_SERIES
+        ) {
+            scannedFiles?.firstOrNull { it.name.equals("ametadata.json", true) || it.name.equals("ametadata", true) }
+                ?: directory?.findFile("ametadata.json") ?: directory?.findFile("ametadata")
+        } else {
+            null
+        }
+        galleryMetadata?.let { file ->
+            runCatching {
+                file.openInputStream().use { input ->
+                    koharia.scan.ArchiveMetadataParser.ametadata(input).toLocalEmbeddedMetadata()
+                }
+            }.getOrNull()?.let {
+                add(LocalMetadataCandidate(it.toLibraryMetadata(), MetadataSuggestionSource.JHENTAI_AMETADATA))
+            }
+        }
         sidecar("metadata.opf")?.let(::readOpfFile)?.let {
             val value = if (role == LocalMetadataRole.SERIES) it.forSeriesDisplay(true) else it
             add(LocalMetadataCandidate(value.toLibraryMetadata(), MetadataSuggestionSource.SIDECAR))
@@ -3102,8 +3128,9 @@ class LocalFolderSource(
                                         )
                                         preferences.setIndex(staged)
                                         val additions = preview.mapNotNull { candidate ->
-                                            val item = staged.itemsByLocation[candidate.root.id to candidate.relativePath]
-                                                ?: return@mapNotNull null
+                                            val item =
+                                                staged.itemsByLocation[candidate.root.id to candidate.relativePath]
+                                                    ?: return@mapNotNull null
                                             val url = LocalLibraryLocator.entryUrl(id, item.rootId, item.locatorPath)
                                             if (!previewUrls.add(url)) return@mapNotNull null
                                             SManga.create().apply {

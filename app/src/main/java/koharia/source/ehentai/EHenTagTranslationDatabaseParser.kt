@@ -14,7 +14,10 @@ internal data class ParsedTagTranslationDatabase(
 )
 
 internal object EHenTagTranslationDatabaseParser {
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+    }
 
     fun parse(text: String): ParsedTagTranslationDatabase {
         val root = json.parseToJsonElement(text).jsonObject

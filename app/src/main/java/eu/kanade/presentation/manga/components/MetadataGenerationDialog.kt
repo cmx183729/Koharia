@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -63,28 +64,31 @@ fun MetadataGenerationDialog(
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.padding(bottom = 4.dp),
                 )
-                MetadataFilenameTemplate.entries.forEach { template ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .selectable(
+                Column(Modifier.selectableGroup()) {
+                    MetadataFilenameTemplate.entries.forEach { template ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectable(
+                                    selected = selectedTemplate == template,
+                                    enabled = !isGenerating,
+                                    role = Role.RadioButton,
+                                    onClick = { onTemplateSelected(template) },
+                                )
+                                .heightIn(min = 48.dp)
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
                                 selected = selectedTemplate == template,
+                                onClick = null,
                                 enabled = !isGenerating,
-                                role = Role.RadioButton,
-                                onClick = { onTemplateSelected(template) },
                             )
-                            .padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = selectedTemplate == template,
-                            onClick = null,
-                            enabled = !isGenerating,
-                        )
-                        Text(
-                            text = stringResource(template.labelResource()),
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
+                            Text(
+                                text = stringResource(template.labelResource()),
+                                modifier = Modifier.padding(start = 8.dp),
+                            )
+                        }
                     }
                 }
 
@@ -217,6 +221,7 @@ private fun MetadataSuggestionSource.labelResource(): StringResource = when (thi
     MetadataSuggestionSource.ITEM_FILENAME -> MR.strings.metadata_source_filename
     MetadataSuggestionSource.MOBI_EMBEDDED -> MR.strings.metadata_source_mobi
     MetadataSuggestionSource.COMICINFO_EMBEDDED -> MR.strings.metadata_source_comicinfo
+    MetadataSuggestionSource.JHENTAI_AMETADATA -> MR.strings.metadata_source_jhentai_ametadata
     MetadataSuggestionSource.CHAPTER_EMBEDDED -> MR.strings.metadata_source_chapter
     MetadataSuggestionSource.SIDECAR -> MR.strings.metadata_source_sidecar
     MetadataSuggestionSource.LOCAL_OVERRIDE -> MR.strings.metadata_source_override

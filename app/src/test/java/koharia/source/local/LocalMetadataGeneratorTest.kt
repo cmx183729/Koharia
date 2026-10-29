@@ -6,6 +6,7 @@ import koharia.connection.LibraryMetadataField
 import koharia.connection.LibraryMetadataSuggestion
 import koharia.connection.MetadataFilenameTemplate
 import koharia.connection.MetadataSuggestionSource
+import koharia.scan.ArchiveMetadata
 import org.jsoup.Jsoup
 import org.jsoup.parser.Parser
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -15,6 +16,21 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class LocalMetadataGeneratorTest {
+
+    @Test
+    fun `ametadata maps to local metadata suggestion fields`() {
+        val metadata = ArchiveMetadata(
+            title = "Gallery title",
+            authors = listOf("artist:name"),
+            genres = listOf("Manga"),
+            tags = listOf("language:Chinese"),
+        ).toLocalEmbeddedMetadata()
+
+        assertEquals("Gallery title", metadata.title)
+        assertEquals(listOf("artist:name"), metadata.authors)
+        assertEquals(listOf("Manga", "language:Chinese"), metadata.subjects)
+        assertEquals(MetadataSuggestionSource.JHENTAI_AMETADATA, metadata.source)
+    }
 
     @Test
     fun `chapter metadata cannot provide any automatic series fields`() {

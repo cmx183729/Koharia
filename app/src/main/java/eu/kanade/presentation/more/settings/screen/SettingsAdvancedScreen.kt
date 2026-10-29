@@ -338,8 +338,11 @@ object SettingsAdvancedScreen : SearchableSettings {
                             val result = tagTranslationService.refresh()
                             withUIContext {
                                 context.toast(
-                                    if (result.isSuccess) MR.strings.pref_ehentai_tag_translation_refresh_success
-                                    else MR.strings.pref_ehentai_tag_translation_failed,
+                                    if (result.isSuccess) {
+                                        MR.strings.pref_ehentai_tag_translation_refresh_success
+                                    } else {
+                                        MR.strings.pref_ehentai_tag_translation_failed
+                                    },
                                 )
                             }
                         }

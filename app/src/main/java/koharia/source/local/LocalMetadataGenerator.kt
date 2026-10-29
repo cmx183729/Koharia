@@ -7,6 +7,7 @@ import koharia.connection.LibraryMetadataSuggestion
 import koharia.connection.MetadataFilenameTemplate
 import koharia.connection.MetadataSuggestionSource
 import koharia.media.LocalMediaFormats
+import koharia.scan.ArchiveMetadata
 import org.jsoup.nodes.Document
 
 internal data class LocalEmbeddedMetadata(
@@ -18,6 +19,14 @@ internal data class LocalEmbeddedMetadata(
     val subjects: List<String> = emptyList(),
     val status: Int? = null,
     val source: MetadataSuggestionSource = MetadataSuggestionSource.EPUB_EMBEDDED,
+)
+
+internal fun ArchiveMetadata.toLocalEmbeddedMetadata(): LocalEmbeddedMetadata = LocalEmbeddedMetadata(
+    title = title ?: series,
+    series = series,
+    authors = authors,
+    subjects = (genres + tags).distinct(),
+    source = MetadataSuggestionSource.JHENTAI_AMETADATA,
 )
 
 internal fun LocalEmbeddedMetadata.forSeriesDisplay(isDirectoryMetadata: Boolean): LocalEmbeddedMetadata {

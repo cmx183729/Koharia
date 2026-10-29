@@ -38,11 +38,18 @@ internal fun prepareInitialLocalDirectories(
     dataDirectory: String,
     displayPath: String,
     json: Json,
+    useSelectedDirectory: Boolean = false,
 ): LocalLibraryConfig {
     if (config.setupCompleted) return config
     val missingTypes = config.missingInitialDirectoryTypes()
     if (missingTypes.isEmpty()) return config
     require(dataDirectory.isNotBlank()) { "App data directory is not configured" }
+    require(missingTypes.size == 1 || !useSelectedDirectory) {
+        "A shared selected directory cannot be used for multiple content types"
+    }
+    if (useSelectedDirectory) {
+        return config.withDirectlySelectedRoot(dataDirectory, displayPath, missingTypes.single())
+    }
     val layout = checkNotNull(
         createManagedLayout(
             context,
@@ -60,6 +67,33 @@ internal fun prepareInitialLocalDirectories(
         managedBaseTreeUri = dataDirectory,
         managedBaseDisplayPath = displayPath,
         libraryId = layout.libraryId,
+    )
+}
+
+internal fun LocalLibraryConfig.withDirectlySelectedRoot(
+    treeUri: String,
+    displayPath: String,
+    contentType: LocalLibraryContentType,
+): LocalLibraryConfig {
+    require(!setupCompleted)
+    require(contentType != LocalLibraryContentType.MIXED)
+    val missingTypes = missingInitialDirectoryTypes()
+    require(missingTypes.size == 1) { "A shared selected directory cannot be used for multiple content types" }
+    require(contentType in missingTypes)
+    require(treeUri.isNotBlank())
+    val bookshelfId = defaultBookshelfId(contentType)
+    require(bookshelfId.isNotBlank())
+    return copy(
+        roots = roots + LocalLibraryRootConfig(
+            id = UUID.randomUUID().toString(),
+            treeUri = treeUri,
+            displayPath = displayPath,
+            contentType = contentType,
+            bookshelfId = bookshelfId,
+            relativePath = "",
+            managed = false,
+        ),
+        libraryId = libraryId.ifBlank { UUID.randomUUID().toString() },
     )
 }
 
