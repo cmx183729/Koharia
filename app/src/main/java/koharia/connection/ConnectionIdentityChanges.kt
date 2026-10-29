@@ -87,6 +87,18 @@ class ConnectionIdentityChanges(
         directoryReservations = updated
     }
 
+    @Synchronized
+    fun releaseDirectories(profiles: List<LibraryConnectionProfile>) {
+        if (profiles.isEmpty()) return
+        val reservedIds = profiles.mapTo(mutableSetOf(), LibraryConnectionProfile::id)
+        val updated = directoryReservations.filterNot { it.id in reservedIds }
+        if (updated == directoryReservations) return
+        check(storage.commit(mapOf(DIRECTORY_KEY to json.encodeToString(updated)))) {
+            "Could not persist connection directory release"
+        }
+        directoryReservations = updated
+    }
+
     fun interruptedImport(key: String): Map<Long, LibraryConnectionProfile>? {
         val interrupted = records.value.filter { it.importKey == key && !it.ready }
         if (interrupted.isEmpty()) return null

@@ -3303,6 +3303,12 @@ class LocalFolderSource(
                 message = context.stringResource(MR.strings.local_library_scan_incomplete),
             )
         }
+        if (successfulRootIds.isNotEmpty() && candidates.isEmpty() && previousItems.isEmpty()) {
+            throw LocalLibraryPartialScanException(
+                failedRootIds = successfulRootIds,
+                message = context.stringResource(MR.strings.local_library_scan_empty),
+            )
+        }
         ConnectionLibraryRefreshResult(
             itemCount = refreshedIndex.items.count {
                 it.kind in setOf(

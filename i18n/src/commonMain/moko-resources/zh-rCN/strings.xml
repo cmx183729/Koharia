@@ -1782,6 +1782,7 @@
     <string name="local_library_auto_directory_pending">保存时将在所选默认文件夹内创建或复用书库目录</string>
     <string name="local_library_initial_scanning">正在扫描新建的本地库…</string>
     <string name="local_library_initial_scan_failed">书库已创建，但首次扫描未完成。可在书架手动刷新重试。</string>
+    <string name="local_library_scan_empty">在已配置的目录中没有找到支持的作品。请确认目录中包含支持的漫画、图片或书籍文件，然后再次扫描。</string>
     <string name="external_media_images_use_merge">普通导入不接受单张图片。请从书架菜单使用“图片合并为漫画”。</string>
     <string name="image_comic_merge">图片合并为漫画</string>
     <string name="image_comic_default_title">新建漫画</string>

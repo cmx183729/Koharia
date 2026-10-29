@@ -1920,6 +1920,7 @@
     <string name="local_library_auto_directory_pending">On save, a folder will be created or reused inside the selected default folder</string>
     <string name="local_library_initial_scanning">Scanning the new local library…</string>
     <string name="local_library_initial_scan_failed">The library was created, but its initial scan did not finish. Refresh the shelf to retry.</string>
+    <string name="local_library_scan_empty">No supported works were found in the configured directories. Check that the selected directories contain supported comic, image, or book files, then scan again.</string>
     <string name="external_media_images_use_merge">Individual images cannot be imported as books. Use “Merge images into comic” from the shelf menu.</string>
     <string name="image_comic_merge">Merge images into comic</string>
     <string name="image_comic_default_title">New comic</string>

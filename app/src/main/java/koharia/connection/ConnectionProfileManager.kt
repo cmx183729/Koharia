@@ -138,6 +138,7 @@ class ConnectionProfileManager(
                     }
                     publishUpdate(after)
                     preferences.flush()
+                    identityChanges.releaseDirectories(listOf(after))
                 }
             } finally {
                 synchronized(this@ConnectionProfileManager) { edits.remove(connectionId) }
@@ -293,7 +294,7 @@ class ConnectionProfileManager(
                 edits[connectionId] = profile
                 profile
             }
-            try {
+            val result = try {
                 registry.provider(profile.providerId)
                     ?.removeConnection(profile)
                     ?.mapCatching { handled ->
@@ -303,6 +304,12 @@ class ConnectionProfileManager(
             } finally {
                 synchronized(this@ConnectionProfileManager) { edits.remove(connectionId) }
             }
+            if (result.isSuccess) {
+                synchronized(this@ConnectionProfileManager) {
+                    identityChanges.releaseDirectories(listOf(profile))
+                }
+            }
+            result
         }
     }
 

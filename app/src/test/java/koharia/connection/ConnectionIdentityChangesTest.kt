@@ -16,6 +16,19 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class ConnectionIdentityChangesTest {
+    @Test
+    fun releasingDirectoriesRemovesInterruptedNamesForTheSameConnection() {
+        val localStorage = Storage()
+        val localJournal = ConnectionIdentityChanges(localStorage, Json)
+        val oldName = previous.copy(name = "Home")
+        val newName = previous.copy(name = "Home (2)")
+        localJournal.reserveDirectories(listOf(oldName, newName))
+
+        localJournal.releaseDirectories(listOf(newName))
+
+        assertEquals(emptyList<LibraryConnectionProfile>(), localJournal.reservedProfiles())
+    }
+
     @Test fun verifiedActivationPersistsWithoutReleasingOtherOwnersAndCanBePausedAgain() {
         val imported = LibraryConnectionProfile(11, "test", "Imported")
         journal.prepareImport(listOf(imported))
@@ -317,7 +330,16 @@ class ConnectionIdentityChangesTest {
         rename.await()
         assertEquals(listOf(previous.copy(name = "A/B"), added), preferences.getProfiles())
         val restarted = manager(ConnectionIdentityChanges(storage, Json))
-        assertEquals("Home (2)", restarted.add("test", "Home").name)
+        assertEquals("Home", restarted.add("test", "Home").name)
+    }
+
+    @Test
+    fun `successful rename releases old and target directory reservations`() = runTest {
+        val restarted = manager(ConnectionIdentityChanges(storage, Json))
+
+        restarted.rename(previous.id, "Destination") { _, _ -> }
+
+        assertEquals("Home", restarted.add("test", "Home").name)
     }
 
     @Test
@@ -352,7 +374,7 @@ class ConnectionIdentityChangesTest {
         release.complete(Unit)
         assertTrue(removal.await().isSuccess)
         assertEquals(listOf(added), preferences.getProfiles())
-        assertEquals("Home (2)", manager(ConnectionIdentityChanges(storage, Json)).add("test", "Home").name)
+        assertEquals("Home", manager(ConnectionIdentityChanges(storage, Json)).add("test", "Home").name)
     }
 
     @Test
