@@ -21,6 +21,7 @@ internal data class LocalScanFile(
 internal class LocalScanDirectoryReader(private val context: Context, private val allowPendingRemote: Boolean = false) {
     val attributes = mutableMapOf<Uri, LocalScanFile>()
     private val directories = mutableMapOf<Uri, List<LocalScanFile>>()
+    private val treeUris = mutableMapOf<Uri, Uri>()
 
     fun metadata(file: UniFile): LocalScanFile = attributes.getOrPut(file.uri) {
         LocalScanFile(file, file.name.orEmpty(), file.isDirectory, file.length(), file.lastModified())
@@ -28,15 +29,18 @@ internal class LocalScanDirectoryReader(private val context: Context, private va
 
     fun list(directory: UniFile): List<LocalScanFile> = directories.getOrPut(directory.uri) {
         val uri = directory.uri
-        val treeUri = uri.scheme == ContentResolver.SCHEME_CONTENT && DocumentsContract.isTreeUri(uri)
-        if (!treeUri && !metadata(directory).directory) throw IOException("Local scan target is not a directory")
+        val treeUri = uri.takeIf { it.isSafTreeUri() } ?: treeUris[uri]
+        if (treeUri == null && !metadata(directory).directory) {
+            throw IOException("Local scan target is not a directory")
+        }
         if (allowPendingRemote && directory is com.hippo.unifile.RemoteStorageFile &&
             directory.runtime.cachedChildren(directory.storagePath) == null
         ) {
             return@getOrPut emptyList()
         }
-        val files = if (treeUri) {
-            listDocuments(uri)
+        val files = if (treeUri != null) {
+            treeUris[directory.uri] = treeUri
+            listDocuments(uri, treeUri)
         } else {
             directory.listFiles()?.map(::metadata) ?: throw IOException("Unable to list local directory")
         }
@@ -44,13 +48,13 @@ internal class LocalScanDirectoryReader(private val context: Context, private va
         files
     }
 
-    private fun listDocuments(uri: Uri): List<LocalScanFile> {
+    private fun listDocuments(uri: Uri, treeUri: Uri): List<LocalScanFile> {
         val documentId = if (DocumentsContract.isDocumentUri(context, uri)) {
             DocumentsContract.getDocumentId(uri)
         } else {
             DocumentsContract.getTreeDocumentId(uri)
         }
-        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(uri, documentId)
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
         val columns = arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
@@ -68,11 +72,12 @@ internal class LocalScanDirectoryReader(private val context: Context, private va
             val expectedCount = cursor.count
             val files = buildList {
                 while (cursor.moveToNext()) {
-                    val childUri = DocumentsContract.buildDocumentUriUsingTree(uri, cursor.getString(0))
+                    val childUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, cursor.getString(0))
                     val file = UniFile.fromUri(context, childUri)
                         ?: throw IOException("Unable to resolve local directory entry")
                     val mimeType = cursor.getString(2)
                     val directory = mimeType == DocumentsContract.Document.MIME_TYPE_DIR || file.isDirectory
+                    if (directory) treeUris[childUri] = treeUri
                     add(
                         LocalScanFile(
                             file = file,
