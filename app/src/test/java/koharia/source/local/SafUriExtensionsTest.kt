@@ -15,11 +15,6 @@ class SafUriExtensionsTest {
     fun `unknown saf mime type probes children even when the display name has a dot`() {
         assertTrue(LocalScanDirectoryReader.shouldProbeDirectoryChildren(null))
         assertTrue(
-            LocalScanDirectoryReader.shouldProbeDirectoryChildren(
-                android.provider.DocumentsContract.Document.MIME_TYPE_UNKNOWN,
-            ),
-        )
-        assertTrue(
             LocalScanDirectoryReader.shouldProbeDirectoryChildren("application/octet-stream"),
         )
     }

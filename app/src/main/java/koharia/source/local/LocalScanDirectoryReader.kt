@@ -71,7 +71,6 @@ internal class LocalScanDirectoryReader(private val context: Context, private va
     internal companion object {
         fun shouldProbeDirectoryChildren(mimeType: String?): Boolean =
             mimeType.isNullOrBlank() ||
-                mimeType == DocumentsContract.Document.MIME_TYPE_UNKNOWN ||
                 mimeType.equals("application/octet-stream", ignoreCase = true)
     }
 
