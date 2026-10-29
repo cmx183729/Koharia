@@ -25,3 +25,6 @@ keystore.properties
 
 # Local test logs, screenshots, fixtures, and diagnostic scratch files
 /.test-artifacts/
+
+# Private development notes
+/docs/DEVELOPMENT_MEMORY.md
