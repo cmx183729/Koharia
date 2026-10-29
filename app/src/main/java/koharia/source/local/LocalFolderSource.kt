@@ -3068,6 +3068,7 @@ class LocalFolderSource(
         val configuredRootIds = config.roots.mapTo(mutableSetOf(), LocalLibraryRootConfig::id)
         val successfulRootIds = mutableSetOf<String>()
         val failedRoots = mutableListOf<LocalLibraryRootConfig>()
+        val candidateCountsByRoot = mutableMapOf<String, Int>()
         val previewUrls = existingByUrl.keys.toMutableSet()
         var lastPreview = 0L
         val candidates = buildList {
@@ -3129,7 +3130,10 @@ class LocalFolderSource(
                     }
                     val directory = preferences.resolveRoot(context, root)
                         ?: throw IOException("Unable to resolve local library directory: ${root.displayPath}")
-                    addAll(candidateResources(ResolvedLocalLibraryRoot(root, directory)))
+                    val resolvedRoot = ResolvedLocalLibraryRoot(root, directory)
+                    val rootCandidates = candidateResources(resolvedRoot)
+                    addAll(rootCandidates)
+                    candidateCountsByRoot[root.displayPath] = rootCandidates.size
                     successfulRootIds += root.id
                 } catch (error: CancellationException) {
                     throw error
@@ -3304,9 +3308,16 @@ class LocalFolderSource(
             )
         }
         if (successfulRootIds.isNotEmpty() && candidates.isEmpty() && previousItems.isEmpty()) {
+            val diagnostics = candidateCountsByRoot.entries.joinToString(separator = "; ") {
+                "${it.key}: candidates=${it.value}"
+            }
+            logcat(LogPriority.WARN) {
+                "Local library scan found no candidates: $diagnostics"
+            }
             throw LocalLibraryPartialScanException(
                 failedRootIds = successfulRootIds,
-                message = context.stringResource(MR.strings.local_library_scan_empty),
+                message = context.stringResource(MR.strings.local_library_scan_empty) +
+                    diagnostics.takeIf(String::isNotBlank)?.let { " ($it)" }.orEmpty(),
             )
         }
         ConnectionLibraryRefreshResult(

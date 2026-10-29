@@ -48,6 +48,27 @@ internal class LocalScanDirectoryReader(private val context: Context, private va
         files
     }
 
+    private fun isDirectoryEntry(
+        treeUri: Uri,
+        documentId: String,
+        displayName: String,
+        mimeType: String?,
+        file: UniFile,
+    ): Boolean {
+        if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR || file.isDirectory) return true
+        if (displayName.substringAfterLast('.', missingDelimiterValue = "").isNotEmpty()) return false
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
+        return runCatching {
+            context.contentResolver.query(
+                childrenUri,
+                arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID),
+                null,
+                null,
+                null,
+            )?.use { it.moveToFirst() } == true
+        }.getOrDefault(false)
+    }
+
     private fun listDocuments(uri: Uri, treeUri: Uri): List<LocalScanFile> {
         val documentId = if (DocumentsContract.isDocumentUri(context, uri)) {
             DocumentsContract.getDocumentId(uri)
@@ -76,7 +97,13 @@ internal class LocalScanDirectoryReader(private val context: Context, private va
                     val file = UniFile.fromUri(context, childUri)
                         ?: throw IOException("Unable to resolve local directory entry")
                     val mimeType = cursor.getString(2)
-                    val directory = mimeType == DocumentsContract.Document.MIME_TYPE_DIR || file.isDirectory
+                    val directory = isDirectoryEntry(
+                        treeUri = treeUri,
+                        documentId = cursor.getString(0),
+                        displayName = cursor.getString(1).orEmpty(),
+                        mimeType = mimeType,
+                        file = file,
+                    )
                     if (directory) treeUris[childUri] = treeUri
                     add(
                         LocalScanFile(
@@ -90,7 +117,14 @@ internal class LocalScanDirectoryReader(private val context: Context, private va
                 }
             }
             if (files.size != expectedCount) throw IOException("Incomplete local directory listing")
-            files
+            if (files.isNotEmpty()) {
+                files
+            } else {
+                // Some SAF providers report an empty child cursor for a readable directory.
+                // Keep DocumentsContract as the primary path, but recover through UniFile when
+                // the provider exposes the same directory through its compatibility API.
+                UniFile.fromUri(context, uri)?.listFiles()?.map(::metadata).orEmpty()
+            }
         } ?: throw IOException("Unable to query local directory")
     }
 }
