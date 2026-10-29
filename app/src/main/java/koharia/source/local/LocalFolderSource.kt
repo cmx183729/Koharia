@@ -2871,37 +2871,37 @@ class LocalFolderSource(
             .filter { it.directory && !it.name.startsWith('.') }
             .map { directory ->
                 val files = reader.list(directory.file).filterNot { it.name.startsWith('.') }
-            val chapters = files.filter { entry ->
-                if (entry.directory) {
-                    reader.list(entry.file).any(::scanImage)
-                } else {
-                    entry.extension in SUPPORTED_FILE_EXTENSIONS
+                val chapters = files.filter { entry ->
+                    if (entry.directory) {
+                        reader.list(entry.file).any(::scanImage)
+                    } else {
+                        entry.extension in SUPPORTED_FILE_EXTENSIONS
+                    }
                 }
+                val contentType = if (root.config.contentType != LocalLibraryContentType.MIXED) {
+                    root.config.contentType
+                } else {
+                    val hasBooks = chapters.any { !it.directory && it.extension in BOOK_FILE_EXTENSIONS }
+                    val hasComics = chapters.any { it.directory || it.extension in COMIC_FILE_EXTENSIONS }
+                    if (hasBooks && !hasComics) LocalLibraryContentType.BOOKS else LocalLibraryContentType.COMICS
+                }
+                ScanCandidate(
+                    root = root.config,
+                    resource = directory.file,
+                    relativePath = directory.name,
+                    contentType = contentType,
+                    kind = LocalLibraryItem.Kind.SERIES,
+                    files = files.map { it.file },
+                    chapterFiles = chapters.map { it.file },
+                    attributes = reader.attributes,
+                    marker = runCatching {
+                        metadataStore.folderMarker(
+                            directory.file,
+                            preferences.getConfig().metadataStorage == LocalMetadataStorage.FOLDER_DIRECTORY,
+                        )
+                    }.getOrNull(),
+                )
             }
-            val contentType = if (root.config.contentType != LocalLibraryContentType.MIXED) {
-                root.config.contentType
-            } else {
-                val hasBooks = chapters.any { !it.directory && it.extension in BOOK_FILE_EXTENSIONS }
-                val hasComics = chapters.any { it.directory || it.extension in COMIC_FILE_EXTENSIONS }
-                if (hasBooks && !hasComics) LocalLibraryContentType.BOOKS else LocalLibraryContentType.COMICS
-            }
-            ScanCandidate(
-                root = root.config,
-                resource = directory.file,
-                relativePath = directory.name,
-                contentType = contentType,
-                kind = LocalLibraryItem.Kind.SERIES,
-                files = files.map { it.file },
-                chapterFiles = chapters.map { it.file },
-                attributes = reader.attributes,
-                marker = runCatching {
-                    metadataStore.folderMarker(
-                        directory.file,
-                        preferences.getConfig().metadataStorage == LocalMetadataStorage.FOLDER_DIRECTORY,
-                    )
-                }.getOrNull(),
-            )
-        }
         return result
     }
 

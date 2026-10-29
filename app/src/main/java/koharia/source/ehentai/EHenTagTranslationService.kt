@@ -40,9 +40,17 @@ class EHenTagTranslationService(
     }
 
     private suspend fun downloadText(): String {
-        return runCatching { download(DOWNLOAD_URL) }.getOrElse { primaryError ->
+        return try {
+            download(DOWNLOAD_URL)
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (primaryError: Exception) {
             ensureActive()
-            runCatching { download(FALLBACK_DOWNLOAD_URL) }.getOrElse { fallbackError ->
+            try {
+                download(FALLBACK_DOWNLOAD_URL)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (fallbackError: Exception) {
                 throw IllegalStateException(
                     "Tag translation download failed from both sources",
                     fallbackError,
