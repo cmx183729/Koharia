@@ -1681,6 +1681,8 @@
     <string name="local_library_import_files">导入本机文件</string>
     <string name="local_library_refresh_complete">本地库刷新完成，发现 %1$d 个作品</string>
     <string name="local_library_refresh_failed">无法刷新本地库</string>
+    <string name="local_library_scan_now">立即扫描</string>
+    <string name="local_library_scan_in_progress">正在扫描…</string>
     <string name="local_library_bookshelves">书库</string>
     <string name="local_library_manage_bookshelves">管理书库</string>
     <string name="local_library_manage_bookshelves_summary">分别管理漫画与书籍书库，并可重命名已有书库。</string>

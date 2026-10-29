@@ -1,6 +1,7 @@
 package koharia.source.local
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
@@ -22,6 +23,8 @@ internal fun LocalLibraryToolbar(
     onConnectionSelect: (Long) -> Unit,
     hasActiveFilters: Boolean,
     onImportClick: () -> Unit,
+    onScanClick: () -> Unit,
+    isScanning: Boolean,
     onMergeImagesClick: (() -> Unit)?,
     onFilterClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -50,6 +53,14 @@ internal fun LocalLibraryToolbar(
         navigateUp = navigateUp,
         scrollBehavior = scrollBehavior,
         additionalActions = listOf(
+            AppBar.Action(
+                title = stringResource(
+                    if (isScanning) MR.strings.local_library_scan_in_progress else MR.strings.local_library_scan_now,
+                ),
+                icon = Icons.Outlined.PlayArrow,
+                onClick = onScanClick,
+                enabled = !isScanning,
+            ),
             AppBar.Action(
                 title = stringResource(MR.strings.local_library_import_files),
                 icon = Icons.Outlined.UploadFile,

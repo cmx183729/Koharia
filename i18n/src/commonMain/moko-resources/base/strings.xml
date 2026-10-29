@@ -1819,6 +1819,8 @@
     <string name="local_library_import_files">Import files from device</string>
     <string name="local_library_refresh_complete">Local library refreshed: %1$d titles found</string>
     <string name="local_library_refresh_failed">Unable to refresh the local library</string>
+    <string name="local_library_scan_now">Scan now</string>
+    <string name="local_library_scan_in_progress">Scanning…</string>
     <string name="local_library_bookshelves">Libraries</string>
     <string name="local_library_manage_bookshelves">Manage libraries</string>
     <string name="local_library_manage_bookshelves_summary">Create separate comic and book libraries and rename existing ones.</string>

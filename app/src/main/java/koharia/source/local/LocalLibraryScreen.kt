@@ -515,6 +515,8 @@ data class LocalLibraryScreen(
                                 onConnectionSelect = connectionPreferences.activeConnectionId::set,
                                 hasActiveFilters = state.filters.isActive,
                                 onImportClick = openImportPicker,
+                                onScanClick = screenModel::refresh,
+                                isScanning = isRefreshing,
                                 onMergeImagesClick = if (parentUrl == null) {
                                     { mergeImages.launch(LocalMediaFormats.images.mimeTypes.toTypedArray()) }
                                 } else {

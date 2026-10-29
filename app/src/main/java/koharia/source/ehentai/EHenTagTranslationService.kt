@@ -1,6 +1,7 @@
 package koharia.source.ehentai
 
 import android.app.Application
+import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.network.await
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -25,30 +26,51 @@ class EHenTagTranslationService(
         withContext(Dispatchers.IO) {
             runCatching {
                 ensureActive()
-                val request = Request.Builder().url(DOWNLOAD_URL).get().build()
-                client.newCall(request).await().use { response ->
-                    ensureActive()
-                    check(response.isSuccessful) { "Tag translation request failed: HTTP ${response.code}" }
-                    val body = response.body ?: error("Empty tag translation response")
-                    check(body.contentLength() <= MAX_BYTES || body.contentLength() == -1L) {
-                        "Tag translation response exceeds size limit"
-                    }
-                    val buffered = body.source().buffer
-                    buffered.request(MAX_BYTES + 1L)
-                    ensureActive()
-                    val bytes = buffered.clone().readByteArray()
-                    check(bytes.size <= MAX_BYTES) { "Tag translation response exceeds size limit" }
-                    val text = bytes.decodeToString()
-                    val parsed = parse(text)
-                    ensureActive()
-                    writeAtomically(text)
-                    EHenTagTranslation.replace(parsed.entries)
-                    preferences.tagTranslationTimestamp.set(parsed.timestamp)
-                    parsed.entries.size
-                }
+                val text = downloadText()
+                val parsed = parse(text)
+                ensureActive()
+                writeAtomically(text)
+                EHenTagTranslation.replace(parsed.entries)
+                preferences.tagTranslationTimestamp.set(parsed.timestamp)
+                parsed.entries.size
             }.onFailure { error ->
                 if (error is kotlinx.coroutines.CancellationException) throw error
             }
+        }
+    }
+
+    private suspend fun downloadText(): String {
+        return runCatching { download(DOWNLOAD_URL) }.getOrElse { primaryError ->
+            ensureActive()
+            runCatching { download(FALLBACK_DOWNLOAD_URL) }.getOrElse { fallbackError ->
+                throw IllegalStateException(
+                    "Tag translation download failed from both sources",
+                    fallbackError,
+                ).also { it.addSuppressed(primaryError) }
+            }
+        }
+    }
+
+    private suspend fun download(url: String): String {
+        val request = Request.Builder()
+            .url(url)
+            .header("Accept", "application/json")
+            .header("User-Agent", "Koharia/${BuildConfig.VERSION_NAME}")
+            .get()
+            .build()
+        return client.newCall(request).await().use { response ->
+            ensureActive()
+            check(response.isSuccessful) { "Tag translation request failed: HTTP ${response.code}" }
+            val body = response.body ?: error("Empty tag translation response")
+            check(body.contentLength() <= MAX_BYTES || body.contentLength() == -1L) {
+                "Tag translation response exceeds size limit"
+            }
+            val source = body.source()
+            source.request(MAX_BYTES.toLong() + 1L)
+            ensureActive()
+            val bytes = source.buffer.clone().readByteArray()
+            check(bytes.size <= MAX_BYTES) { "Tag translation response exceeds size limit" }
+            bytes.decodeToString()
         }
     }
 
@@ -89,6 +111,7 @@ class EHenTagTranslationService(
 
     companion object {
         private const val DOWNLOAD_URL = "https://fastly.jsdelivr.net/gh/EhTagTranslation/DatabaseReleases/db.html.json"
+        private const val FALLBACK_DOWNLOAD_URL = "https://raw.githubusercontent.com/EhTagTranslation/DatabaseReleases/master/db.html.json"
         private const val CACHE_FILE_NAME = "ehentai-tag-translation.json"
         private const val MAX_BYTES = 16 * 1024 * 1024
     }

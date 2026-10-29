@@ -115,7 +115,19 @@ class NetworkStorageRuntime private constructor(
         records.get<StorageDirectorySnapshot>("directories", StoragePath.normalize(path))?.children
     }
     suspend fun refreshParent(path: String) {
-        snapshot.directory(StoragePath.parent(path), true)
+        val directory = snapshot.directory(StoragePath.parent(path), true)
+        records.put("directories", directory.directory.path, directory)
+    }
+
+    suspend fun scanSnapshot(
+        path: String,
+        forceFull: Boolean = false,
+        onDirectory: suspend (StorageDirectorySnapshot) -> Unit = {},
+    ) {
+        snapshot.scan(path, refresh = true, forceFull = forceFull) { directory ->
+            records.put("directories", directory.directory.path, directory)
+            onDirectory(directory)
+        }
     }
     private fun close() {
         closed = true

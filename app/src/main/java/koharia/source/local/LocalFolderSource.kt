@@ -2848,10 +2848,29 @@ class LocalFolderSource(
     private fun candidateSeriesDirectories(
         root: ResolvedLocalLibraryRoot,
         reader: LocalScanDirectoryReader,
-    ): List<ScanCandidate> = reader.list(root.directory)
-        .filter { it.directory && !it.name.startsWith('.') }
-        .map { directory ->
-            val files = reader.list(directory.file).filterNot { it.name.startsWith('.') }
+    ): List<ScanCandidate> {
+        val rootEntries = reader.list(root.directory).filterNot { it.name.startsWith('.') }
+        val rootImages = rootEntries.filter(::scanImage)
+        val result = buildList {
+            if (rootImages.size >= 2) {
+                add(
+                    ScanCandidate(
+                        root = root.config,
+                        resource = root.directory,
+                        relativePath = LocalLibraryLocator.ROOT_DIRECTORY_ENTRY,
+                        contentType = root.config.contentType,
+                        kind = LocalLibraryItem.Kind.SERIES,
+                        files = rootEntries.map { it.file },
+                        chapterFiles = rootImages.map { it.file },
+                        attributes = reader.attributes,
+                    ),
+                )
+            }
+        }.toMutableList()
+        result += rootEntries
+            .filter { it.directory && !it.name.startsWith('.') }
+            .map { directory ->
+                val files = reader.list(directory.file).filterNot { it.name.startsWith('.') }
             val chapters = files.filter { entry ->
                 if (entry.directory) {
                     reader.list(entry.file).any(::scanImage)
@@ -2883,6 +2902,8 @@ class LocalFolderSource(
                 }.getOrNull(),
             )
         }
+        return result
+    }
 
     private fun candidateIndividualEntries(
         root: ResolvedLocalLibraryRoot,
@@ -3051,38 +3072,34 @@ class LocalFolderSource(
                 try {
                     koharia.storage.NetworkStorageRuntime.fromUri(context, Uri.parse(root.treeUri))?.let { remote ->
                         if (remote.runtime.config.persistentIdentity) remote.runtime.identities.refresh()
-                        remote.runtime.snapshot.scan(
-                            koharia.storage.StoragePath.normalize(
+                        remote.runtime.scanSnapshot(
+                            path = koharia.storage.StoragePath.normalize(
                                 listOf(
                                     remote.storagePath,
                                     root.relativePath,
                                 ).filter(String::isNotEmpty).joinToString("/"),
                             ),
-                            refresh = true,
                             forceFull = !incrementalScan,
                             onDirectory = {
                                 val now = android.os.SystemClock.elapsedRealtime()
                                 if (now - lastPreview >= 500) {
                                     val directory = preferences.resolveRoot(context, root)
                                     if (directory != null) {
-                                        val preview =
-                                            candidateResources(
-                                                ResolvedLocalLibraryRoot(root, directory),
-                                                partial = true,
-                                            )
-                                        val staged =
-                                            buildIndex(
-                                                preview,
-                                                preferences.getIndex(),
-                                                previousIndex.scannedAt,
-                                                configuredRootIds,
-                                                emptySet(),
-                                            )
+                                        val preview = candidateResources(
+                                            ResolvedLocalLibraryRoot(root, directory),
+                                            partial = true,
+                                        )
+                                        val staged = buildIndex(
+                                            preview,
+                                            preferences.getIndex(),
+                                            previousIndex.scannedAt,
+                                            configuredRootIds,
+                                            emptySet(),
+                                        )
                                         preferences.setIndex(staged)
                                         val additions = preview.mapNotNull { candidate ->
-                                            val item =
-                                                staged.itemsByLocation[candidate.root.id to candidate.relativePath]
-                                                    ?: return@mapNotNull null
+                                            val item = staged.itemsByLocation[candidate.root.id to candidate.relativePath]
+                                                ?: return@mapNotNull null
                                             val url = LocalLibraryLocator.entryUrl(id, item.rootId, item.locatorPath)
                                             if (!previewUrls.add(url)) return@mapNotNull null
                                             SManga.create().apply {
