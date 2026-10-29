@@ -551,7 +551,7 @@ class LocalLibraryPreferences(
             .split('/')
             .filter(String::isNotBlank)
             .fold(tree) { parent, segment -> parent.findFile(segment) ?: return null }
-            .takeIf { it.isDirectory }
+            .takeIf { it.isDirectory || it.uri.isSafTreeUri() }
     }
 
     fun managedBaseDirectory(context: android.content.Context): UniFile? {
@@ -593,7 +593,7 @@ class LocalLibraryPreferences(
     private fun selectedTreeDirectory(context: android.content.Context, value: String): UniFile? {
         val uri = value.takeIf(String::isNotBlank)?.let(Uri::parse) ?: return null
         return (koharia.storage.NetworkStorageRuntime.fromUri(context, uri) ?: UniFile.fromUri(context, uri))
-            ?.takeIf { it.isDirectory }
+            ?.takeIf { it.isDirectory || uri.isSafTreeUri() }
     }
 
     companion object {

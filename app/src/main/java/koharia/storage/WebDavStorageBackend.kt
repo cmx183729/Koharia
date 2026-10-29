@@ -186,7 +186,16 @@ class WebDavStorageBackend(
     override suspend fun list(path: String): List<StorageEntry> {
         val normalized = StoragePath.normalize(path)
         val result = properties(normalized, "1")
-        if (result.none { it.path == normalized && it.directory }) throw StorageFailure(StorageFailure.Reason.PROTOCOL)
+        val self = result.firstOrNull { it.path == normalized }
+        if (self == null) {
+            // Some DAV servers omit the requested collection from Depth: 1 responses.
+            if (!stat(normalized).directory) throw StorageFailure(StorageFailure.Reason.PROTOCOL)
+            if (result.any { StoragePath.parent(it.path) != normalized && it.path != normalized }) {
+                throw StorageFailure(StorageFailure.Reason.PROTOCOL)
+            }
+        } else if (!self.directory) {
+            throw StorageFailure(StorageFailure.Reason.PROTOCOL)
+        }
         return result.filter {
             it.path != normalized && StoragePath.parent(it.path) == normalized
         }.distinctBy { it.path }

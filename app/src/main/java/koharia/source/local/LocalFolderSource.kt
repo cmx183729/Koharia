@@ -2850,9 +2850,12 @@ class LocalFolderSource(
         reader: LocalScanDirectoryReader,
     ): List<ScanCandidate> {
         val rootEntries = reader.list(root.directory).filterNot { it.name.startsWith('.') }
-        val rootImages = rootEntries.filter(::scanImage)
+        val rootChapters = rootEntries.filter { entry ->
+            !entry.directory &&
+                (entry.extension in supportedExtensions(root.config.contentType) || scanImage(entry))
+        }
         val result = buildList {
-            if (rootImages.size >= 2) {
+            if (rootChapters.isNotEmpty()) {
                 add(
                     ScanCandidate(
                         root = root.config,
@@ -2861,7 +2864,7 @@ class LocalFolderSource(
                         contentType = root.config.contentType,
                         kind = LocalLibraryItem.Kind.SERIES,
                         files = rootEntries.map { it.file },
-                        chapterFiles = rootImages.map { it.file },
+                        chapterFiles = rootChapters.map { it.file },
                         attributes = reader.attributes,
                     ),
                 )
@@ -2875,7 +2878,7 @@ class LocalFolderSource(
                     if (entry.directory) {
                         reader.list(entry.file).any(::scanImage)
                     } else {
-                        entry.extension in SUPPORTED_FILE_EXTENSIONS
+                        entry.extension in SUPPORTED_FILE_EXTENSIONS || scanImage(entry)
                     }
                 }
                 val contentType = if (root.config.contentType != LocalLibraryContentType.MIXED) {

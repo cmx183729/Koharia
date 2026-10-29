@@ -35,6 +35,25 @@ class StorageProtocolTest {
         assertFalse(entry.directory)
     }
 
+    @Test fun `DAV accepts depth one responses that omit the requested collection`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setResponseCode(207).setBody(
+                    """<d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/book.cbz</d:href><d:propstat><d:prop><d:resourcetype/><d:getcontentlength>12</d:getcontentlength></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>""",
+                ),
+            )
+            server.enqueue(
+                MockResponse().setResponseCode(207).setBody(
+                    """<d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>""",
+                ),
+            )
+            val backend = WebDavStorageBackend(OkHttpClient(), server.url("/dav/").toString(), "", "")
+            assertEquals(listOf("book.cbz"), backend.list("").map { it.path })
+            assertEquals("1", server.takeRequest().getHeader("Depth"))
+            assertEquals("0", server.takeRequest().getHeader("Depth"))
+        }
+    }
+
     @Test fun `DAV refuses entity declarations and responses outside root`() {
         val base = "https://example.test/dav/".toHttpUrl()
         val entity = """<!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///missing">]><root>&xxe;</root>"""
