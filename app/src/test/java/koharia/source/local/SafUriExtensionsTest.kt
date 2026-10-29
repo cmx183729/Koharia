@@ -12,6 +12,26 @@ class SafUriExtensionsTest {
     }
 
     @Test
+    fun `unknown saf mime type probes children even when the display name has a dot`() {
+        assertTrue(LocalScanDirectoryReader.shouldProbeDirectoryChildren(null))
+        assertTrue(
+            LocalScanDirectoryReader.shouldProbeDirectoryChildren(
+                android.provider.DocumentsContract.Document.MIME_TYPE_UNKNOWN,
+            ),
+        )
+        assertTrue(
+            LocalScanDirectoryReader.shouldProbeDirectoryChildren("application/octet-stream"),
+        )
+    }
+
+    @Test
+    fun `known file mime type does not probe children`() {
+        assertFalse(
+            LocalScanDirectoryReader.shouldProbeDirectoryChildren("image/jpeg"),
+        )
+    }
+
+    @Test
     fun `non tree uri is not treated as saf directory`() {
         assertFalse(Uri.parse("content://com.android.externalstorage.documents/document/primary%3ADownload").isSafTreeUri())
         assertFalse(Uri.parse("file:///sdcard/Download").isSafTreeUri())

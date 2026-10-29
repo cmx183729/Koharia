@@ -51,12 +51,11 @@ internal class LocalScanDirectoryReader(private val context: Context, private va
     private fun isDirectoryEntry(
         treeUri: Uri,
         documentId: String,
-        displayName: String,
         mimeType: String?,
         file: UniFile,
     ): Boolean {
         if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR || file.isDirectory) return true
-        if (displayName.substringAfterLast('.', missingDelimiterValue = "").isNotEmpty()) return false
+        if (!shouldProbeDirectoryChildren(mimeType)) return false
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
         return runCatching {
             context.contentResolver.query(
@@ -67,6 +66,13 @@ internal class LocalScanDirectoryReader(private val context: Context, private va
                 null,
             )?.use { it.moveToFirst() } == true
         }.getOrDefault(false)
+    }
+
+    internal companion object {
+        fun shouldProbeDirectoryChildren(mimeType: String?): Boolean =
+            mimeType.isNullOrBlank() ||
+                mimeType == DocumentsContract.Document.MIME_TYPE_UNKNOWN ||
+                mimeType.equals("application/octet-stream", ignoreCase = true)
     }
 
     private fun listDocuments(uri: Uri, treeUri: Uri): List<LocalScanFile> {
@@ -100,7 +106,6 @@ internal class LocalScanDirectoryReader(private val context: Context, private va
                     val directory = isDirectoryEntry(
                         treeUri = treeUri,
                         documentId = cursor.getString(0),
-                        displayName = cursor.getString(1).orEmpty(),
                         mimeType = mimeType,
                         file = file,
                     )
