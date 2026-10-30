@@ -109,6 +109,14 @@
     <string name="pref_connection_management">库连接管理</string>
     <string name="connection_unavailable">不可用</string>
     <string name="connection_library_refresh_failed">无法刷新合并书库，当前显示的是已保存的内容。</string>
+    <string name="connection_library_all_connections">全部连接</string>
+    <string name="connection_library_filter_owner">连接</string>
+    <string name="connection_library_filter_favorites">仅收藏</string>
+    <string name="connection_library_filter_completed">仅显示已完结</string>
+    <string name="connection_library_filter_downloaded">仅显示本机已下载</string>
+    <string name="connection_library_sort_title">标题</string>
+    <string name="connection_library_sort_author">作者</string>
+    <string name="connection_library_sort_owner">连接</string>
     <string name="connection_provider">连接类型</string>
     <string name="connection_provider_local">本地 / SMB / WebDAV</string>
     <string name="action_add_connection">添加连接</string>
@@ -366,7 +374,7 @@
     <string name="pref_manage_local_cache_removed_manga">已被删除漫画缓存</string>
     <string name="pref_manage_local_cache_chapter">章节缓存</string>
     <string name="pref_manage_local_cache_cover">封面缓存</string>
-    <string name="pref_manage_local_cache_temporary">全部临时缓存（保留离线章节）</string>
+    <string name="pref_manage_local_cache_temporary">全部临时缓存（清除阅读缓存，保留已下载的章节文件）</string>
     <string name="used_cache">已使用：%1$s</string>
     <string name="cache_deleted">已清除缓存，删除了 %1$d 个文件</string>
     <string name="cache_delete_error">清除时发生错误</string>
@@ -1329,7 +1337,7 @@
     <string name="error_repo_exists">此仓库已存在！</string>
     <string name="action_delete_repo">删除仓库</string>
     <string name="invalid_repo_name">仓库网址无效</string>
-    <string name="pref_storage_location_info">用于自动备份、章节下载、本地图源。</string>
+    <string name="pref_storage_location_info">用于自动备份、章节下载和自定义封面文件。更改此位置不会移动现有文件。本地书库文件夹和生成的缓存分别管理。</string>
     <string name="manga_interval_expected_update">预计 %1$s后更新，每 %2$s检查一次。</string>
     <string name="manga_interval_custom_amount">自定义更新频率：</string>
     <string name="onboarding_permission_install_apps">应用安装权限</string>

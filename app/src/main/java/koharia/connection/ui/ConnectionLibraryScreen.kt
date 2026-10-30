@@ -25,8 +25,10 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.browse.BrowseSourceContent
 import eu.kanade.presentation.library.components.MangaReadProgress
 import eu.kanade.presentation.util.Screen
+import eu.kanade.tachiyomi.data.download.DownloadManager
 import koharia.connection.ConnectionBrowseScreen
 import koharia.connection.ConnectionLibraryEntryKey
+import koharia.connection.MangaDownloadState
 import koharia.connection.NO_ACTIVE_CONNECTION
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.i18n.MR
@@ -82,6 +84,57 @@ class ConnectionLibraryScreen : Screen(), ConnectionBrowseScreen {
         }
         val columns by columnPreference.collectAsState()
         val progressByKey = remember(state.entries) { connectionLibraryReadProgress(state.entries) }
+        var showFilters by remember { mutableStateOf(false) }
+        val ownerOptions = remember(state.entries) { model.ownerOptions() }
+        val sortOptions = listOf(
+            ConnectionLibrarySort.TITLE to stringResource(MR.strings.connection_library_sort_title),
+            ConnectionLibrarySort.AUTHOR to stringResource(MR.strings.connection_library_sort_author),
+            ConnectionLibrarySort.DATE_ADDED to stringResource(MR.strings.action_sort_date_added),
+            ConnectionLibrarySort.LAST_UPDATE to stringResource(MR.strings.action_sort_last_manga_update),
+            ConnectionLibrarySort.OWNER to stringResource(MR.strings.connection_library_sort_owner),
+        )
+        val ownerLabels = remember(ownerOptions, model) { ownerOptions.toMap() }
+        val downloads = remember { Injekt.get<DownloadManager>() }
+        val downloadCounts = remember { mutableStateOf<Map<ConnectionLibraryEntryKey, Long>>(emptyMap()) }
+        val onDownloadState = remember(downloads, model) {
+            { manga: tachiyomi.domain.manga.model.Manga ->
+                val key = ConnectionLibraryEntryKey(manga.source, manga.id)
+                downloadCounts.value[key]?.let { MangaDownloadState(it, null) }
+                    ?: aggregateDownloadState(manga, downloads).also { value ->
+                        downloadCounts.value = downloadCounts.value + (key to value.count)
+                    }
+            }
+        }
+        LaunchedEffect(downloads, onDownloadState, state.entries) {
+            downloads.cacheUpdates.collect { change ->
+                if (change.sourceId == null && change.mangaDirectories == null) {
+                    downloadCounts.value = emptyMap()
+                    model.invalidateDownloadCounts()
+                } else {
+                    val affected = state.entries.filter { entry ->
+                        downloads.isAffectedByCacheUpdate(entry.manga, change)
+                    }
+                    affected.forEach { entry ->
+                        downloadCounts.value = downloadCounts.value - entry.key
+                        model.invalidateDownloadCount(entry.manga)
+                    }
+                }
+            }
+        }
+
+        if (showFilters) {
+            ConnectionLibraryAllFilterSheet(
+                owners = ownerOptions,
+                sortOptions = sortOptions,
+                filters = state.filters,
+                onDismiss = { showFilters = false },
+                onApply = { filters ->
+                    model.setFilters(filters)
+                    model.refreshDownloadFilter()
+                    showFilters = false
+                },
+            )
+        }
 
         Scaffold(
             snackbarHost = { SnackbarHost(snackbar) },
@@ -99,10 +152,11 @@ class ConnectionLibraryScreen : Screen(), ConnectionBrowseScreen {
                     connectionProfiles = emptyList(),
                     activeConnectionId = NO_ACTIVE_CONNECTION,
                     onConnectionSelect = {},
-                    onFilterClick = {},
+                    onFilterClick = { showFilters = true },
                     onRefresh = model::refresh,
                     navigateUp = null,
-                    showFilterAction = false,
+                    showFilterAction = true,
+                    hasActiveFilters = state.filters.isActive,
                     showConnectionAction = false,
                     title = stringResource(MR.strings.label_library),
                     scrollBehavior = scrollBehavior,
@@ -142,6 +196,8 @@ class ConnectionLibraryScreen : Screen(), ConnectionBrowseScreen {
                     contentPadding = PaddingValues(0.dp),
                     showLibraryBadges = false,
                     readProgress = { manga -> progressByKey[ConnectionLibraryEntryKey(manga.source, manga.id)] },
+                    manualDownloadState = onDownloadState,
+                    entryLabel = { manga -> ownerLabels[manga.source] ?: model.ownerLabel(manga.source) },
                     onWebViewClick = {},
                     onHelpClick = {},
                     onMangaClick = { navigator.push(it.toConnectionDetailsScreen()) },

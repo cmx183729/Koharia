@@ -100,12 +100,12 @@ class StorageManager(
     }
 
     fun getCustomCoversDirectory(create: Boolean = false): UniFile? {
-        // Resolve the current URI here as directory changes are otherwise processed asynchronously.
-        val root = getBaseDir(storagePreferences.baseStorageDirectory.get()) ?: return null
+        val root = currentBaseDir() ?: return null
         val directory = root.findFile(CUSTOM_COVERS_PATH)
             ?: if (create) root.createDirectory(CUSTOM_COVERS_PATH) else null
-        if (create) DiskUtil.createNoMediaFile(directory, context)
-        return directory?.takeIf { it.isDirectory }
+        return directory?.takeIf { it.isDirectory }?.also {
+            if (create) DiskUtil.createNoMediaFile(it, context)
+        }
     }
 
     private data class CachedDownloadsDirectory(val root: UniFile, val directory: UniFile, val resolvedAt: Long) {

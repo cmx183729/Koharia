@@ -13,10 +13,16 @@ import io.mockk.verify
 import koharia.connection.ConnectionMangaBehavior
 import koharia.connection.ConnectionMangaBehaviorAdapter
 import koharia.source.local.LocalFolderSource
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -174,6 +180,36 @@ class CustomCoverStoreTest {
         assertEquals(PNG_HEADER.toList(), directory.readBytes(published)?.toList())
         assertEquals(false, legacy.exists())
         assertEquals(1L, store.changes.value)
+    }
+
+    @Test
+    fun `storage root change invalidates covers without repeating legacy migration`() = runBlocking {
+        val preference = mockk<Preference<String>>()
+        val rootChanges = MutableStateFlow("initial")
+        every { storagePreferences.baseStorageDirectory } returns preference
+        every { preference.changes() } returns rootChanges
+        coEvery { mangaRepository.getFavorites() } returns emptyList()
+        coEvery { mangaRepository.getMangaBySourceId(any()) } returns emptyList()
+        val emptySourceManager = mockk<SourceManager>(relaxed = true)
+        val isolatedStore = CustomCoverStore(
+            context,
+            storageManager,
+            storagePreferences,
+            mangaRepository,
+            emptySourceManager,
+        ) { true }
+        every { storageManager.getCustomCoversDirectory(create = true) } returns null
+
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        isolatedStore.initialize(scope)
+        try {
+            rootChanges.value = "new-root"
+            withTimeout(5_000) { isolatedStore.changes.first() }
+            assertEquals(1L, isolatedStore.changes.value)
+            verify(exactly = 1) { emptySourceManager.getCatalogueSources() }
+        } finally {
+            scope.cancel()
+        }
     }
 
     @Test

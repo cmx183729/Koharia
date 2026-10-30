@@ -296,6 +296,22 @@ class StorageManagerDownloadDirectoryTest {
     }
 
     @Test
+    fun `custom cover lookup uses the newly selected root before notification`() {
+        val secondCovers = mockk<UniFile> {
+            every { isDirectory } returns true
+        }
+        val second = root("second", mockk())
+        every { second.findFile("covers") } returns secondCovers
+        val manager = manager()
+
+        every { preference.get() } returns "second"
+
+        assertSame(secondCovers, manager.getCustomCoversDirectory())
+        verify(exactly = 0) { root.findFile("covers") }
+        verify(exactly = 0) { second.createDirectory("covers") }
+    }
+
+    @Test
     fun `custom cover writes create covers under the selected root`() {
         val covers = mockk<UniFile> {
             every { isDirectory } returns true
@@ -338,6 +354,22 @@ class StorageManagerDownloadDirectoryTest {
         assertNull(manager.getCustomCoversDirectory())
         verify(exactly = 1) { root.findFile("covers") }
         verify(exactly = 0) { root.createDirectory("covers") }
+    }
+
+    @Test
+    fun `custom cover creation preserves an existing non-directory entry`() {
+        val file = mockk<UniFile> {
+            every { isDirectory } returns false
+        }
+        val manager = manager()
+
+        every { root.findFile("covers") } returns file
+
+        assertNull(manager.getCustomCoversDirectory(create = true))
+        verify(exactly = 1) { root.findFile("covers") }
+        verify(exactly = 0) { root.createDirectory("covers") }
+        verify(exactly = 0) { file.delete() }
+        verify(exactly = 0) { DiskUtil.createNoMediaFile(any(), any()) }
     }
 
     @Test

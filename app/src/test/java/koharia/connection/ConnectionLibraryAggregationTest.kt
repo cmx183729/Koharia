@@ -150,6 +150,24 @@ class ConnectionLibraryAggregationTest {
     }
 
     @Test
+    fun `provider membership adapter only receives and returns owner rows`() = kotlinx.coroutines.test.runTest {
+        val source = source(41L)
+        val membership = source as ConnectionLibraryMembershipAdapter
+        val owned = Manga.create().copy(id = 1L, source = 41L)
+        val foreign = Manga.create().copy(id = 2L, source = 42L)
+        coEvery { membership.filterLibraryEntries(listOf(owned)) } returns listOf(owned, foreign)
+        val repository = mockk<MangaRepository> {
+            coEvery { getLibraryManga() } returns emptyList()
+            coEvery { getMangaBySourceId(41L) } returns listOf(owned, foreign)
+        }
+
+        assertEquals(
+            listOf(ConnectionLibraryEntry(owned)),
+            repository.getAggregatedConnectionLibraryEntries(sourceManager(source)),
+        )
+    }
+
+    @Test
     fun `failed provider row lookup does not hide other provider entries`() = kotlinx.coroutines.test.runTest {
         val unavailable = source(41L)
         val healthy = source(42L)

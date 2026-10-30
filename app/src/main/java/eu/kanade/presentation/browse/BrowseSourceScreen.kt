@@ -15,6 +15,9 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.paging.LoadState
@@ -33,6 +36,8 @@ import koharia.connection.rememberConnectionShelfEntries
 import koharia.connection.resolveShelfReadProgress
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.domain.library.model.LibraryDisplayMode
 import tachiyomi.domain.library.service.LibraryPreferences
@@ -76,8 +81,26 @@ fun BrowseSourceContent(
     val gridState = rememberLazyGridState()
     val listState = rememberLazyListState()
     val isList = displayMode == LibraryDisplayMode.List
+    val currentManualDownloadState by rememberUpdatedState(manualDownloadState)
+    val currentVisibleIndices by rememberUpdatedState {
+        if (isList) {
+            listState.layoutInfo.visibleItemsInfo.map { it.index }
+        } else {
+            gridState.layoutInfo.visibleItemsInfo.map { it.index }
+        }
+    }
     val leadingItems = (if (contentHeader == null) 0 else 1) +
         if (isList || (showPagingLoadingIndicator && mangaList.loadState.prepend is LoadState.Loading)) 1 else 0
+    LaunchedEffect(source, mangaList, manualDownloadState, leadingItems) {
+        if (source == null && manualDownloadState != null) {
+            snapshotFlow<List<Manga>> {
+                val indices = visibleMangaIndices(currentVisibleIndices(), leadingItems, mangaList.itemCount)
+                indices.mapNotNull { index -> mangaList.peek(index)?.value }
+            }.distinctUntilChanged().collect { visibleManga ->
+                visibleManga.forEach { currentManualDownloadState?.invoke(it) }
+            }
+        }
+    }
     val localEntries = rememberConnectionShelfEntries(
         source,
         mangaList,
@@ -234,6 +257,11 @@ fun BrowseSourceContent(
         }
     }
 }
+
+internal fun visibleMangaIndices(visibleIndices: List<Int>, leadingItems: Int, itemCount: Int): List<Int> =
+    visibleIndices.mapNotNull { index ->
+        (index - leadingItems).takeIf { index >= leadingItems && it < itemCount }
+    }
 
 @Composable
 internal fun MissingSourceScreen(

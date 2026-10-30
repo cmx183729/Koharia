@@ -3,6 +3,7 @@ package koharia.connection.ui
 import cafe.adriel.voyager.core.annotation.InternalVoyagerApi
 import cafe.adriel.voyager.core.model.ScreenModelStore
 import eu.kanade.domain.source.service.SourcePreferences
+import eu.kanade.tachiyomi.source.model.SManga
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -226,6 +227,25 @@ class ConnectionLibrarySearchTest {
     }
 
     @Test
+    fun `text search matches author and artist without collapsing same-title owners`() {
+        val sameTitleFirstOwner = ConnectionLibraryEntry(
+            Manga.create().copy(id = 10L, source = 41L, title = "Shared title", author = "A. Author"),
+        )
+        val sameTitleSecondOwner = ConnectionLibraryEntry(
+            Manga.create().copy(id = 10L, source = 42L, title = "Shared title", artist = "B. Artist"),
+        )
+
+        assertEquals(
+            listOf(sameTitleFirstOwner),
+            filterConnectionLibraryEntries(listOf(sameTitleFirstOwner, sameTitleSecondOwner), "author", genre = false),
+        )
+        assertEquals(
+            listOf(sameTitleSecondOwner),
+            filterConnectionLibraryEntries(listOf(sameTitleFirstOwner, sameTitleSecondOwner), "artist", genre = false),
+        )
+    }
+
+    @Test
     fun `genre search uses manga genres`() {
         assertEquals(listOf(entries[0]), filterConnectionLibraryEntries(entries, "fant", genre = true))
     }
@@ -233,6 +253,86 @@ class ConnectionLibrarySearchTest {
     @Test
     fun `blank search returns original order`() {
         assertEquals(entries, filterConnectionLibraryEntries(entries, " ", genre = false))
+    }
+
+    @Test
+    fun `aggregate transforms filter by owner favorite completed and local downloads`() {
+        val ownerOne = ConnectionLibraryEntry(
+            Manga.create().copy(
+                id = 5L,
+                source = 41L,
+                title = "A",
+                favorite = false,
+                status = SManga.COMPLETED.toLong(),
+            ),
+        )
+        val ownerTwo = ConnectionLibraryEntry(
+            Manga.create().copy(id = 5L, source = 42L, title = "B", favorite = true, status = SManga.ONGOING.toLong()),
+        )
+        val results = transformConnectionLibraryEntries(
+            entries = listOf(ownerOne, ownerTwo),
+            query = "",
+            genreQuery = false,
+            filters = ConnectionLibraryFilters(ownerSourceId = 42L, favoritesOnly = true, downloadedOnly = true),
+            manualDownloadCount = { if (it.key.sourceId == 42L) 2 else 0 },
+        )
+
+        assertEquals(listOf(ownerTwo), results)
+    }
+
+    @Test
+    fun `completed filter uses persisted manga status`() {
+        val completed = ConnectionLibraryEntry(
+            Manga.create().copy(id = 6L, source = 41L, status = SManga.COMPLETED.toLong()),
+        )
+        val ongoing = ConnectionLibraryEntry(
+            Manga.create().copy(id = 7L, source = 42L, status = SManga.ONGOING.toLong()),
+        )
+
+        assertEquals(
+            listOf(completed),
+            transformConnectionLibraryEntries(
+                listOf(ongoing, completed),
+                "",
+                false,
+                ConnectionLibraryFilters(completedOnly = true),
+            ),
+        )
+    }
+
+    @Test
+    fun `sorting is stable by owner and manga identity`() {
+        val sameOwnerHigherId = ConnectionLibraryEntry(Manga.create().copy(id = 2L, source = 41L, title = "Same"))
+        val otherOwner = ConnectionLibraryEntry(Manga.create().copy(id = 1L, source = 42L, title = "Same"))
+        val sameOwnerLowerId = ConnectionLibraryEntry(Manga.create().copy(id = 1L, source = 41L, title = "Same"))
+
+        assertEquals(
+            listOf(sameOwnerLowerId, sameOwnerHigherId, otherOwner),
+            transformConnectionLibraryEntries(
+                listOf(otherOwner, sameOwnerHigherId, sameOwnerLowerId),
+                "",
+                false,
+                ConnectionLibraryFilters(),
+            ),
+        )
+    }
+
+    @Test
+    fun `author sort is case insensitive with blank authors first`() {
+        val unknown = ConnectionLibraryEntry(Manga.create().copy(id = 3L, source = 41L, title = "Unknown"))
+        val authored = ConnectionLibraryEntry(
+            Manga.create().copy(id = 2L, source = 42L, title = "Known", author = "Ada"),
+        )
+
+        assertEquals(
+            listOf(unknown, authored),
+            transformConnectionLibraryEntries(
+                listOf(unknown, authored),
+                "",
+                false,
+                ConnectionLibraryFilters(sort = ConnectionLibrarySort.AUTHOR),
+            ),
+        )
     }
 
     private fun entry(id: Long, title: String, genre: List<String>?) =

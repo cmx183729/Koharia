@@ -293,6 +293,14 @@
     <string name="pref_connection_management">Library connections</string>
     <string name="connection_unavailable">Unavailable</string>
     <string name="connection_library_refresh_failed">Could not refresh the combined library. Showing saved items.</string>
+    <string name="connection_library_all_connections">All connections</string>
+    <string name="connection_library_filter_owner">Connection</string>
+    <string name="connection_library_filter_favorites">Favorites only</string>
+    <string name="connection_library_filter_completed">Completed series only</string>
+    <string name="connection_library_filter_downloaded">Downloaded on this device only</string>
+    <string name="connection_library_sort_title">Title</string>
+    <string name="connection_library_sort_author">Author</string>
+    <string name="connection_library_sort_owner">Connection</string>
     <string name="connection_provider">Connection type</string>
     <string name="connection_provider_local">Local / SMB / WebDAV</string>
     <string name="action_add_connection">Add connection</string>
@@ -841,7 +849,7 @@
 
       <!-- Data and storage section -->
     <string name="pref_storage_location">Storage location</string>
-    <string name="pref_storage_location_info">Used for automatic backups, chapter downloads, and local source.</string>
+    <string name="pref_storage_location_info">Used for automatic backups, chapter downloads, and custom cover files. Changing this location does not move existing files. Local library folders and generated caches are managed separately.</string>
     <string name="pref_create_backup">Create backup</string>
     <string name="pref_create_backup_summ">Can be used to restore current library</string>
     <string name="pref_restore_backup">Restore backup</string>
@@ -907,7 +915,7 @@
     <string name="pref_manage_local_cache_removed_manga">Deleted manga cache</string>
     <string name="pref_manage_local_cache_chapter">Chapter cache</string>
     <string name="pref_manage_local_cache_cover">Cover cache</string>
-    <string name="pref_manage_local_cache_temporary">All temporary cache (keeps offline chapters)</string>
+    <string name="pref_manage_local_cache_temporary">All temporary caches (clears reading caches; keeps downloaded chapter files)</string>
     <string name="used_cache">Used: %1$s</string>
     <string name="cache_deleted">Cache cleared, %1$d files deleted</string>
     <string name="cache_delete_error">Error occurred while clearing</string>

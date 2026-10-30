@@ -11,6 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -49,10 +50,12 @@ class CustomCoverStore(
 
     fun initialize(scope: CoroutineScope) {
         scope.launch {
-            storagePreferences.baseStorageDirectory.changes().collect {
+            storagePreferences.baseStorageDirectory.changes().drop(1).collect {
                 invalidate()
-                migrateLegacyCovers()
             }
+        }
+        scope.launch {
+            migrateLegacyCovers()
         }
     }
 
