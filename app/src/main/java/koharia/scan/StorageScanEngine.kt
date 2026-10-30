@@ -1,5 +1,6 @@
 package koharia.scan
 
+import koharia.media.LocalMediaFormats
 import koharia.storage.LibraryStorageBackend
 import koharia.storage.StorageEntry
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +33,6 @@ class StorageScanEngine(
                     gate.withPermit {
                         val fingerprint = ScanFingerprint(entry.size, entry.modifiedAt, entry.version)
                         if (incremental && !forceFull && previous[entry.path] == fingerprint) return@withPermit null
-                        if (requestIntervalMs > 0) delay(requestIntervalMs)
                         scanFile(entry, fingerprint)
                     }
                 }
@@ -44,11 +44,14 @@ class StorageScanEngine(
 
     private suspend fun scanFile(entry: StorageEntry, fingerprint: ScanFingerprint): ScannedStorageItem? {
         val extension = entry.name.substringAfterLast('.', "").lowercase()
-        if (extension in IMAGE_EXTENSIONS) return ScannedStorageItem(entry.path, fingerprint, null, false)
+        if (LocalMediaFormats.isImage(extension)) return ScannedStorageItem(entry.path, fingerprint, null, false)
         if (extension !in ARCHIVE_EXTENSIONS) return null
+        // Throttle only entries that issue content requests; listing metadata alone classifies images.
+        if (requestIntervalMs > 0) delay(requestIntervalMs)
         val directory = ZipRangeDirectory.read(backend, entry)
         val metadata = directory.readFirst("ComicInfo.xml")?.let(ArchiveMetadataParser::comicInfo)
             ?: directory.readFirst("ametadata")?.let(ArchiveMetadataParser::ametadata)
+            ?: directory.readFirst("ametadata.json")?.let(ArchiveMetadataParser::ametadata)
         return ScannedStorageItem(entry.path, fingerprint, metadata, true)
     }
 }
@@ -66,9 +69,12 @@ private class ZipRangeDirectory private constructor(
     private val entry: StorageEntry,
     private val records: Map<String, Record>,
 ) {
+    /** Prefers the shallowest match so a nested chapter's metadata cannot replace the archive's own. */
     suspend fun readFirst(
         name: String,
-    ): ByteArray? = records.entries.firstOrNull { it.key.substringAfterLast('/').equals(name, true) }
+    ): ByteArray? = records.entries
+        .filter { it.key.substringAfterLast('/').equals(name, true) }
+        .minByOrNull { entry -> entry.key.count { it == '/' } }
         ?.value?.let { read(it) }
 
     private suspend fun read(record: Record): ByteArray {
@@ -76,6 +82,7 @@ private class ZipRangeDirectory private constructor(
         check(le(local, 0) == 0x04034b50) { "Invalid ZIP local header" }
         val nameLength = us(local, 26)
         val extraLength = us(local, 28)
+        check(record.compressedSize <= MAX_COMPRESSED_BYTES) { "Archive metadata exceeds the supported size" }
         val compressed = backend.read(entry, record.offset + 30 + nameLength + extraLength, record.compressedSize)
         val output = when (record.method) {
             0 -> compressed
@@ -90,6 +97,9 @@ private class ZipRangeDirectory private constructor(
 
     companion object {
         private const val MAX_ENTRY_BYTES = 2 * 1024 * 1024
+
+        // Deflate can slightly expand incompressible input; this bounds the transfer before decoding.
+        private const val MAX_COMPRESSED_BYTES = MAX_ENTRY_BYTES + 64 * 1024
         suspend fun read(backend: LibraryStorageBackend, entry: StorageEntry): ZipRangeDirectory {
             val tailLength = minOf(entry.size, 65_557L).toInt()
             val tailOffset = entry.size - tailLength
@@ -150,5 +160,5 @@ private fun java.io.InputStream.readBounded(max: Int): ByteArray {
     return output.toByteArray()
 }
 
+// Only ZIP containers can be inspected with ranged central-directory reads.
 private val ARCHIVE_EXTENSIONS = setOf("zip", "cbz")
-private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp")

@@ -63,6 +63,23 @@ class DirectoryPageLoaderTest {
     }
 
     @Test
+    fun `reopening a page creates a fresh stream`() = runTest {
+        val directory = mockk<UniFile>()
+        var opens = 0
+        val pageFile = mockk<UniFile> {
+            every { name } returns "1.jpg"
+            every { isDirectory } returns false
+            every { openInputStream() } answers { (++opens).toString().byteInputStream() }
+        }
+        val page = DirectoryPageLoader(directory, filesProvider = { listOf(pageFile) }).getPages().single()
+
+        assertEquals(0, opens)
+        assertEquals("1", page.stream!!().use { it.readBytes().decodeToString() })
+        assertEquals("2", page.stream!!().use { it.readBytes().decodeToString() })
+        assertEquals(2, opens)
+    }
+
+    @Test
     fun `uppercase image names remain lazy without content sniff requests`() = runTest {
         val directory = mockk<UniFile>()
         val children = listOf(image("2.JPG"), image("1.PNG"), image("3.WEBP"))

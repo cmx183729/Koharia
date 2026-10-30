@@ -44,6 +44,27 @@ class StorageCacheTest {
         }
     }
 
+    @Test fun `short range response for final partial block is rejected and not cached`() = runBlocking {
+        val memory = MemoryStorageBackend().apply { seed("page.jpg", "final-page") }
+        val backend = object : LibraryStorageBackend by memory {
+            override suspend fun read(entry: StorageEntry, offset: Long, length: Int): ByteArray =
+                memory.read(entry, offset, length - 1)
+        }
+        val cache = StorageBlockCache(
+            temporary.toFile(),
+            StorageSession(1, "account", "root") { true },
+            backend,
+        ) { 1024 }
+        val entry = backend.stat("page.jpg")
+
+        val error = assertThrows(StorageFailure::class.java) {
+            runBlocking { cache.read(entry, 0, entry.size.toInt()) }
+        }
+
+        assertEquals(StorageFailure.Reason.PROTOCOL, error.reason)
+        assertEquals(0, temporary.toFile().walkTopDown().count { it.extension == "block" })
+    }
+
     @Test fun `complete file remains protected while its reader holds a lease`() = runBlocking {
         val backend = MemoryStorageBackend().apply {
             seed("book", "x".repeat(StorageBlockCache.BLOCK_SIZE * 2))
@@ -462,6 +483,26 @@ class StorageCacheTest {
         val cache = StorageBlockCache(temporary.toFile(), StorageSession(1, "a", "r") { false }, backend) { 1024 }
         assertThrows(CancellationException::class.java) { runBlocking { cache.read(backend.stat("book"), 0, 4) } }
         assertEquals(0, temporary.toFile().walkTopDown().count { it.isFile })
+    }
+
+    @Test fun `changed version at the same path invalidates ranged and complete cache entries`() = runBlocking {
+        val backend = MemoryStorageBackend().apply { seed("page.jpg", "oldold") }
+        val cache = StorageBlockCache(
+            temporary.toFile(),
+            StorageSession(1, "a", "r") { true },
+            backend,
+        ) { 1024 }
+        val original = backend.stat("page.jpg")
+        assertArrayEquals("oldold".encodeToByteArray(), cache.read(original, 0, 6))
+        cache.openCompleteInputStream(original).use { assertArrayEquals("oldold".encodeToByteArray(), it.readBytes()) }
+
+        backend.seed("page.jpg", "newnew")
+        val replacement = backend.stat("page.jpg")
+
+        assertArrayEquals("newnew".encodeToByteArray(), cache.read(replacement, 0, 6))
+        cache.openCompleteInputStream(replacement).use {
+            assertArrayEquals("newnew".encodeToByteArray(), it.readBytes())
+        }
     }
 
     @Test fun `stable resource identity reuses cached bytes after a move`() = runBlocking {

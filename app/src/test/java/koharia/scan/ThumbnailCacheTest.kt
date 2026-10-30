@@ -74,16 +74,57 @@ class ThumbnailCacheTest {
             generated.incrementAndGet()
             bitmap()
         }
-        fun open(owner: String = "owner1", width: Int = 200) {
-            cache.openOrCreate(source, owner, width, 400, true, true)!!.close()
+        fun open(owner: String = "owner1", width: Int = 200, fill: Boolean = true) {
+            cache.openOrCreate(source, owner, width, 400, fill, true)!!.close()
         }
         open()
         open()
         open("owner2")
         open(width = 300)
+        open(fill = false)
         source.appendText("new version")
         open()
-        assertEquals(4, generated.get())
+        assertEquals(5, generated.get())
+    }
+
+    @Test
+    fun `empty cached thumbnail is regenerated`() {
+        val source = newFile().apply { writeText("source") }
+        val directory = newFolder()
+        val generated = AtomicInteger()
+        val cache = ThumbnailCache(directory, 1024) { _, _, _, _ ->
+            generated.incrementAndGet()
+            bitmap()
+        }
+
+        cache.openOrCreate(source, "owner", 200, 400, true, true)!!.close()
+        directory.listFiles()!!.single().writeBytes(byteArrayOf())
+
+        val reopened = cache.openOrCreate(source, "owner", 200, 400, true, true)
+
+        assertNotNull(reopened)
+        reopened!!.use { assertArrayEquals(payload, it.readBytes()) }
+        assertEquals(2, generated.get())
+    }
+
+    @Test
+    fun `same length source update invalidates thumbnail by modification time`() {
+        val source = newFile().apply {
+            writeText("first")
+            setLastModified(1_700_000_000_000L)
+        }
+        val generated = AtomicInteger()
+        val cache = ThumbnailCache(newFolder(), 1024) { _, _, _, _ ->
+            generated.incrementAndGet()
+            bitmap()
+        }
+
+        cache.openOrCreate(source, "owner", 200, 400, true, true)!!.close()
+        source.writeText("other")
+        source.setLastModified(1_700_000_005_000L)
+        cache.openOrCreate(source, "owner", 200, 400, true, true)!!.close()
+
+        assertEquals(2, generated.get())
     }
 
     @Test
@@ -102,6 +143,22 @@ class ThumbnailCacheTest {
         val cache = ThumbnailCache(directory, 1024)
         val bitmap = bitmap(success = false)
         assertTrue(runCatching { cache.put("key", bitmap) }.isFailure)
+        assertTrue(directory.listFiles()!!.isEmpty())
+    }
+
+    @Test
+    fun `oversized generated thumbnail is rejected and temporary file removed`() {
+        val directory = newFolder()
+        val cache = ThumbnailCache(directory, 3)
+        val bitmap = mockk<Bitmap>(relaxed = true)
+        every { bitmap.compress(any(), any(), any()) } answers {
+            thirdArg<OutputStream>().write(byteArrayOf(1, 2, 3, 4))
+            true
+        }
+
+        val error = runCatching { cache.put("oversized", bitmap) }.exceptionOrNull()
+
+        assertEquals("Thumbnail exceeds cache budget", error?.message)
         assertTrue(directory.listFiles()!!.isEmpty())
     }
 

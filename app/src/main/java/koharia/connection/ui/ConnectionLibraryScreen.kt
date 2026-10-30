@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,8 +23,10 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import eu.kanade.presentation.browse.BrowseSourceContent
+import eu.kanade.presentation.library.components.MangaReadProgress
 import eu.kanade.presentation.util.Screen
 import koharia.connection.ConnectionBrowseScreen
+import koharia.connection.ConnectionLibraryEntryKey
 import koharia.connection.NO_ACTIVE_CONNECTION
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.i18n.MR
@@ -63,6 +67,12 @@ class ConnectionLibraryScreen : Screen(), ConnectionBrowseScreen {
         val pages = model.pages.collectAsLazyPagingItems()
         val navigator = LocalNavigator.currentOrThrow
         val snackbar = remember { SnackbarHostState() }
+        val refreshFailedMessage = stringResource(MR.strings.connection_library_refresh_failed)
+        LaunchedEffect(state.error, state.entries.isNotEmpty()) {
+            if (state.error != null && state.entries.isNotEmpty()) {
+                snackbar.showSnackbar(refreshFailedMessage)
+            }
+        }
         val libraryPreferences = remember { Injekt.get<LibraryPreferences>() }
         val configuration = LocalConfiguration.current
         val columnPreference = if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
@@ -71,8 +81,10 @@ class ConnectionLibraryScreen : Screen(), ConnectionBrowseScreen {
             libraryPreferences.portraitColumns
         }
         val columns by columnPreference.collectAsState()
+        val progressByKey = remember(state.entries) { connectionLibraryReadProgress(state.entries) }
 
         Scaffold(
+            snackbarHost = { SnackbarHost(snackbar) },
             topBar = { scrollBehavior ->
                 ConnectionLibraryToolbar(
                     searchQuery = searchQuery,
@@ -129,6 +141,7 @@ class ConnectionLibraryScreen : Screen(), ConnectionBrowseScreen {
                     snackbarHostState = snackbar,
                     contentPadding = PaddingValues(0.dp),
                     showLibraryBadges = false,
+                    readProgress = { manga -> progressByKey[ConnectionLibraryEntryKey(manga.source, manga.id)] },
                     onWebViewClick = {},
                     onHelpClick = {},
                     onMangaClick = { navigator.push(it.toConnectionDetailsScreen()) },

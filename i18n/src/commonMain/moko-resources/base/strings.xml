@@ -292,6 +292,7 @@
     <string name="pref_server_management">Library connections</string>
     <string name="pref_connection_management">Library connections</string>
     <string name="connection_unavailable">Unavailable</string>
+    <string name="connection_library_refresh_failed">Could not refresh the combined library. Showing saved items.</string>
     <string name="connection_provider">Connection type</string>
     <string name="connection_provider_local">Local / SMB / WebDAV</string>
     <string name="action_add_connection">Add connection</string>

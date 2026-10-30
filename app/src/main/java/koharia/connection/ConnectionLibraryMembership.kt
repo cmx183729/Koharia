@@ -69,9 +69,10 @@ private suspend fun MangaRepository.getAggregatedProviderManagedLibraryEntries(
         logcat(LogPriority.WARN, error) { "Unable to load provider-managed library entries for source $sourceId" }
         return@flatMap emptyList()
     }
-    val source = sourceManager.get(sourceId) as? ConnectionLibraryMembershipAdapter ?: return@flatMap entries
+    val ownedEntries = entries.filter { it.source == sourceId }
+    val source = sourceManager.get(sourceId) as? ConnectionLibraryMembershipAdapter ?: return@flatMap ownedEntries
     try {
-        source.filterLibraryEntries(entries)
+        source.filterLibraryEntries(ownedEntries).filter { it.source == sourceId }
     } catch (error: Exception) {
         if (error is CancellationException) throw error
         logcat(LogPriority.WARN, error) { "Unable to filter provider-managed library entries for source $sourceId" }

@@ -108,6 +108,7 @@
     <string name="pref_server_management">库连接管理</string>
     <string name="pref_connection_management">库连接管理</string>
     <string name="connection_unavailable">不可用</string>
+    <string name="connection_library_refresh_failed">无法刷新合并书库，当前显示的是已保存的内容。</string>
     <string name="connection_provider">连接类型</string>
     <string name="connection_provider_local">本地 / SMB / WebDAV</string>
     <string name="action_add_connection">添加连接</string>

@@ -54,6 +54,33 @@ class ConnectionLibraryAggregationTest {
     }
 
     @Test
+    fun `favorite aggregates take precedence over duplicate managed entries`() = kotlinx.coroutines.test.runTest {
+        val manga = Manga.create().copy(id = 7L, source = 41L)
+        val libraryManga = LibraryManga(
+            manga = manga,
+            categories = listOf(4L),
+            totalChapters = 8,
+            readCount = 3,
+            bookmarkCount = 1,
+            latestUpload = 100,
+            chapterFetchedAt = 90,
+            lastRead = 80,
+        )
+        val source = source(41L)
+        coEvery { (source as ConnectionLibraryMembershipAdapter).filterLibraryEntries(listOf(manga)) } returns
+            listOf(manga)
+        val repository = mockk<MangaRepository> {
+            coEvery { getLibraryManga() } returns listOf(libraryManga)
+            coEvery { getMangaBySourceId(41L) } returns listOf(manga)
+        }
+
+        val entries = repository.getAggregatedConnectionLibraryEntries(sourceManager(source))
+
+        assertEquals(1, entries.size)
+        assertEquals(libraryManga, entries.single().libraryManga)
+    }
+
+    @Test
     fun `same manga id from different connections remains distinct`() {
         val first = entry(id = 7, source = 41, title = "First")
         val second = entry(id = 7, source = 42, title = "Second")
@@ -103,6 +130,55 @@ class ConnectionLibraryAggregationTest {
             listOf(ConnectionLibraryEntry(healthyManga)),
             repository.getAggregatedConnectionLibraryEntries(manager),
         )
+    }
+
+    @Test
+    fun `provider filter cannot contribute rows owned by another source`() = kotlinx.coroutines.test.runTest {
+        val source = source(41L)
+        val misplaced = Manga.create().copy(id = 9L, source = 99L)
+        coEvery { (source as ConnectionLibraryMembershipAdapter).filterLibraryEntries(emptyList()) } returns
+            listOf(misplaced)
+        val repository = mockk<MangaRepository> {
+            coEvery { getLibraryManga() } returns emptyList()
+            coEvery { getMangaBySourceId(41L) } returns emptyList()
+        }
+
+        assertEquals(
+            emptyList<ConnectionLibraryEntry>(),
+            repository.getAggregatedConnectionLibraryEntries(sourceManager(source)),
+        )
+    }
+
+    @Test
+    fun `failed provider row lookup does not hide other provider entries`() = kotlinx.coroutines.test.runTest {
+        val unavailable = source(41L)
+        val healthy = source(42L)
+        val healthyManga = Manga.create().copy(id = 2L, source = 42L)
+        coEvery { (healthy as ConnectionLibraryMembershipAdapter).filterLibraryEntries(listOf(healthyManga)) } returns
+            listOf(healthyManga)
+        val repository = mockk<MangaRepository> {
+            coEvery { getLibraryManga() } returns emptyList()
+            coEvery { getMangaBySourceId(41L) } throws IllegalStateException("database unavailable")
+            coEvery { getMangaBySourceId(42L) } returns listOf(healthyManga)
+        }
+
+        assertEquals(
+            listOf(ConnectionLibraryEntry(healthyManga)),
+            repository.getAggregatedConnectionLibraryEntries(sourceManager(unavailable, healthy)),
+        )
+    }
+
+    @Test
+    fun `cancellation from provider row lookup remains visible`() = kotlinx.coroutines.test.runTest {
+        val source = source(41L)
+        val repository = mockk<MangaRepository> {
+            coEvery { getLibraryManga() } returns emptyList()
+            coEvery { getMangaBySourceId(41L) } throws CancellationException("cancelled")
+        }
+
+        assertThrows(CancellationException::class.java) {
+            kotlinx.coroutines.runBlocking { repository.getAggregatedConnectionLibraryEntries(sourceManager(source)) }
+        }
     }
 
     @Test

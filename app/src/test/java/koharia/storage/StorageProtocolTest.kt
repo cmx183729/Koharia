@@ -283,6 +283,22 @@ class StorageProtocolTest {
         }
     }
 
+    @Test fun `DAV range request rejects full response when server ignores range`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(200).setBody("0123456789"))
+            val backend = WebDavStorageBackend(OkHttpClient(), server.url("/dav/").toString(), "", "")
+            val entry = StorageEntry("book.cbz", false, 10, version = "\"v1\"")
+
+            val error = assertThrows(StorageFailure::class.java) {
+                runBlocking { backend.read(entry, 2, 3) }
+            }
+
+            assertEquals(StorageFailure.Reason.UNSUPPORTED, error.reason)
+            val request = server.takeRequest()
+            assertEquals("bytes=2-4", request.getHeader("Range"))
+        }
+    }
+
     @Test fun `DAV content bypasses default scan delay while metadata retains it`() = runBlocking {
         val previousInjekt = Injekt
         patchInjekt()
