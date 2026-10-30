@@ -125,11 +125,95 @@ class StorageManagerDownloadDirectoryTest {
         val manager = manager()
         assertSame(directory, manager.getDownloadsDirectoryForRead())
         withTimeout(5_000) { observing.await() }
+        every { preference.get() } returns "second"
         changes.send("second")
         withTimeout(5_000) {
             while (manager.getDownloadsDirectoryForRead() !== secondDirectory) delay(1)
         }
         assertSame(secondDirectory, manager.getDownloadsDirectoryForRead())
+    }
+
+    @Test
+    fun `consumers use the selected root before its change notification arrives`() {
+        val secondDownloads = mockk<UniFile>()
+        val second = root("second", secondDownloads)
+        val backup = mockk<UniFile>()
+        val local = mockk<UniFile>()
+        every { second.createDirectory("autobackup") } returns backup
+        every { second.createDirectory("local") } returns local
+        val manager = manager()
+        assertSame(directory, manager.getDownloadsDirectoryForRead())
+
+        every { preference.get() } returns "second"
+        assertSame(secondDownloads, manager.getDownloadsDirectoryForRead())
+        assertSame(secondDownloads, manager.getDownloadsDirectory())
+        assertSame(backup, manager.getAutomaticBackupsDirectory())
+        assertSame(local, manager.getLocalSourceDirectory())
+        verify(exactly = 1) { root.createDirectory("downloads") }
+        verify(exactly = 0) { root.createDirectory("autobackup") }
+        verify(exactly = 0) { root.createDirectory("local") }
+        verify(exactly = 0) { root.delete() }
+    }
+
+    @Test
+    fun `inaccessible newly selected root never falls back to the old directory`() {
+        val second = root("second", mockk())
+        every { second.exists() } returns false
+        val manager = manager()
+        assertSame(directory, manager.getDownloadsDirectoryForRead())
+
+        every { preference.get() } returns "second"
+        assertNull(manager.getDownloadsDirectoryForRead())
+        assertNull(manager.getDownloadsDirectory())
+        assertNull(manager.getAutomaticBackupsDirectory())
+        assertNull(manager.getLocalSourceDirectory())
+        verify(exactly = 1) { root.createDirectory("downloads") }
+        verify(exactly = 0) { second.createDirectory(any()) }
+    }
+
+    @Test
+    fun `temporarily unavailable selected root recovers without changing the preference`() {
+        val secondDownloads = mockk<UniFile>()
+        val second = root("second", secondDownloads)
+        every { second.exists() } returns false
+        val manager = manager()
+        assertSame(directory, manager.getDownloadsDirectoryForRead())
+
+        every { preference.get() } returns "second"
+        assertNull(manager.getDownloadsDirectoryForRead())
+        every { second.exists() } returns true
+        assertSame(secondDownloads, manager.getDownloadsDirectoryForRead())
+        verify(exactly = 1) { root.createDirectory("downloads") }
+        verify(exactly = 1) { second.createDirectory("downloads") }
+    }
+
+    @Test
+    fun `initially unavailable root recovers without restarting the manager`() {
+        every { root.exists() } returns false
+        val manager = manager()
+        assertNull(manager.getDownloadsDirectoryForRead())
+
+        every { root.exists() } returns true
+        assertSame(directory, manager.getDownloadsDirectoryForRead())
+        verify(exactly = 1) { root.createDirectory("downloads") }
+    }
+
+    @Test
+    fun `delayed obsolete notification does not restore the old storage root`() = runBlocking {
+        val secondDownloads = mockk<UniFile>()
+        root("second", secondDownloads)
+        val manager = manager()
+        withTimeout(5_000) { observing.await() }
+        assertSame(directory, manager.getDownloadsDirectoryForRead())
+        every { preference.get() } returns "second"
+        assertSame(secondDownloads, manager.getDownloadsDirectoryForRead())
+
+        val changed = async(start = CoroutineStart.UNDISPATCHED) { manager.changes.first() }
+        changes.send("first")
+        withTimeout(5_000) { changed.await() }
+        assertSame(secondDownloads, manager.getDownloadsDirectoryForRead())
+        verify(exactly = 1) { root.createDirectory("downloads") }
+        verify(exactly = 0) { root.delete() }
     }
 
     @Test
@@ -174,6 +258,7 @@ class StorageManagerDownloadDirectoryTest {
         val manager = manager()
         withTimeout(5_000) { observing.await() }
         val changed = async(start = CoroutineStart.UNDISPATCHED) { manager.changes.first() }
+        every { preference.get() } returns "second"
         changes.send("second")
         withTimeout(5_000) { changed.await() }
 
@@ -196,6 +281,63 @@ class StorageManagerDownloadDirectoryTest {
         verify(exactly = 1) { root.createDirectory("autobackup") }
         verify(exactly = 1) { root.createDirectory("local") }
         verify(exactly = 0) { root.createDirectory("downloads") }
+    }
+
+    @Test
+    fun `custom cover lookup does not create a directory`() {
+        val manager = manager()
+
+        every { root.findFile("covers") } returns null
+
+        assertNull(manager.getCustomCoversDirectory())
+        verify(exactly = 1) { root.findFile("covers") }
+        verify(exactly = 0) { root.createDirectory("covers") }
+        verify(exactly = 0) { DiskUtil.createNoMediaFile(any(), any()) }
+    }
+
+    @Test
+    fun `custom cover writes create covers under the selected root`() {
+        val covers = mockk<UniFile> {
+            every { isDirectory } returns true
+        }
+        val manager = manager()
+
+        every { root.findFile("covers") } returns null
+        every { root.createDirectory("covers") } returns covers
+
+        assertSame(covers, manager.getCustomCoversDirectory(create = true))
+        verify(exactly = 1) { root.findFile("covers") }
+        verify(exactly = 1) { root.createDirectory("covers") }
+        verify(exactly = 1) { DiskUtil.createNoMediaFile(covers, context) }
+    }
+
+    @Test
+    fun `existing custom covers are reused without creating a replacement`() {
+        val covers = mockk<UniFile> {
+            every { isDirectory } returns true
+        }
+        val manager = manager()
+
+        every { root.findFile("covers") } returns covers
+
+        assertSame(covers, manager.getCustomCoversDirectory(create = true))
+        verify(exactly = 1) { root.findFile("covers") }
+        verify(exactly = 0) { root.createDirectory("covers") }
+        verify(exactly = 1) { DiskUtil.createNoMediaFile(covers, context) }
+    }
+
+    @Test
+    fun `non-directory custom cover entries are not returned`() {
+        val file = mockk<UniFile> {
+            every { isDirectory } returns false
+        }
+        val manager = manager()
+
+        every { root.findFile("covers") } returns file
+
+        assertNull(manager.getCustomCoversDirectory())
+        verify(exactly = 1) { root.findFile("covers") }
+        verify(exactly = 0) { root.createDirectory("covers") }
     }
 
     @Test

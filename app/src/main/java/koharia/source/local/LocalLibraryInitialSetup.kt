@@ -14,6 +14,16 @@ internal fun shouldCreateInitialLocalDirectories(
     it.id != sourceId && it.providerId == LocalFolderConnectionProvider.ID
 }
 
+internal fun LocalLibraryConfig.initialSetupDraft(isNew: Boolean): LocalLibraryConfig =
+    if (isNew && !setupCompleted && roots.isEmpty()) {
+        copy(enabledContentTypes = setOf(LocalLibraryContentType.COMICS))
+    } else {
+        this
+    }
+
+internal fun LocalLibraryConfig.canUseSelectedDirectory(): Boolean =
+    !setupCompleted && roots.isEmpty() && enabledContentTypes.count { it != LocalLibraryContentType.MIXED } == 1
+
 internal fun LocalLibraryConfig.hasSelectedDefaultModes(selectedShelfIds: Collection<String>): Boolean {
     if (setupCompleted) return true
     val types = enabledContentTypes.filter { it != LocalLibraryContentType.MIXED }
@@ -38,14 +48,14 @@ internal fun prepareInitialLocalDirectories(
     dataDirectory: String,
     displayPath: String,
     json: Json,
-    useSelectedDirectory: Boolean = false,
+    useSelectedDirectory: Boolean = config.canUseSelectedDirectory(),
 ): LocalLibraryConfig {
     if (config.setupCompleted) return config
     val missingTypes = config.missingInitialDirectoryTypes()
     if (missingTypes.isEmpty()) return config
     require(dataDirectory.isNotBlank()) { "App data directory is not configured" }
-    require(missingTypes.size == 1 || !useSelectedDirectory) {
-        "A shared selected directory cannot be used for multiple content types"
+    require(!useSelectedDirectory || config.canUseSelectedDirectory()) {
+        "A shared selected directory cannot be used for multiple content types or existing roots"
     }
     if (useSelectedDirectory) {
         return config.withDirectlySelectedRoot(dataDirectory, displayPath, missingTypes.single())
@@ -78,7 +88,7 @@ internal fun LocalLibraryConfig.withDirectlySelectedRoot(
     require(!setupCompleted)
     require(contentType != LocalLibraryContentType.MIXED)
     val missingTypes = missingInitialDirectoryTypes()
-    require(missingTypes.size == 1) { "A shared selected directory cannot be used for multiple content types" }
+    require(canUseSelectedDirectory()) { "A selected directory requires one content type and no existing roots" }
     require(contentType in missingTypes)
     require(treeUri.isNotBlank())
     val bookshelfId = defaultBookshelfId(contentType)
@@ -109,8 +119,27 @@ internal fun LocalLibraryConfig.missingInitialDirectoryTypes(): Set<LocalLibrary
 internal suspend fun prepareInitialNetworkDirectories(
     backend: koharia.storage.LibraryStorageBackend,
     config: LocalLibraryConfig,
+    useSelectedDirectory: Boolean = config.canUseSelectedDirectory(),
 ): LocalLibraryConfig {
-    val roots = config.missingInitialDirectoryTypes().map { type ->
+    val missingTypes = config.missingInitialDirectoryTypes()
+    if (missingTypes.isEmpty()) return config
+    if (useSelectedDirectory) {
+        require(config.canUseSelectedDirectory()) {
+            "A selected directory requires one content type and no existing roots"
+        }
+        check(backend.stat("").directory)
+        val type = missingTypes.single()
+        return config.copy(
+            roots = config.roots + LocalLibraryRootConfig(
+                id = UUID.randomUUID().toString(),
+                contentType = type,
+                bookshelfId = config.defaultBookshelfId(type).also { require(it.isNotBlank()) },
+                relativePath = "",
+                managed = false,
+            ),
+        )
+    }
+    val roots = missingTypes.map { type ->
         val name = if (type == LocalLibraryContentType.COMICS) "Comics" else "Books"
         val existing = try {
             backend.stat(name)

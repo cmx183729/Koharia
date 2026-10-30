@@ -42,7 +42,6 @@ import eu.kanade.presentation.browse.BrowseSourceContent
 import eu.kanade.presentation.components.AdaptiveSheet
 import eu.kanade.presentation.library.components.MangaReadProgress
 import eu.kanade.presentation.util.Screen
-import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import koharia.connection.ConnectionPreferences
 import koharia.connection.ConnectionSource
 import kotlinx.collections.immutable.persistentListOf
@@ -152,7 +151,7 @@ fun ConnectionPagedShelf(
         scope.launch {
             try {
                 val local = withContext(Dispatchers.IO) { materialize(manga) }
-                navigator.push(MangaScreen(local.id))
+                navigator.push(local.toConnectionDetailsScreen())
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 snackbar.showSnackbar(errorMessage(error))

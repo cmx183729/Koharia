@@ -11,6 +11,8 @@ import coil3.fetch.Fetcher
 import coil3.fetch.SourceFetchResult
 import coil3.getOrDefault
 import coil3.request.Options
+import coil3.size.Dimension
+import coil3.size.Scale
 import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.data.cache.CoverCache
 import eu.kanade.tachiyomi.data.coil.MangaCoverFetcher.Companion.USE_CUSTOM_COVER_KEY
@@ -18,6 +20,7 @@ import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.source.online.HttpSource
 import koharia.connection.ConnectionChapterThumbnailAdapter
 import koharia.cover.CustomCoverStore
+import kotlinx.coroutines.CancellationException
 import logcat.LogPriority
 import okhttp3.CacheControl
 import okhttp3.Call
@@ -60,6 +63,7 @@ class MangaCoverFetcher(
     private val chapterThumbnailSourceLazy: Lazy<ConnectionChapterThumbnailAdapter?>,
     private val callFactoryLazy: Lazy<Call.Factory>,
     private val imageLoader: ImageLoader,
+    private val openThumbnail: (File, String, Int, Int, Boolean, Boolean) -> InputStream?,
 ) : Fetcher {
 
     private val diskCacheKey: String
@@ -112,19 +116,58 @@ class MangaCoverFetcher(
         )
     }
 
-    private fun fileLoader(file: File): FetchResult {
+    private fun fileLoader(
+        file: File,
+        snapshot: DiskCache.Snapshot? = null,
+        dataSource: DataSource = DataSource.DISK,
+    ): FetchResult {
+        val width = (options.size.width as? Dimension.Pixels)?.px
+        val height = (options.size.height as? Dimension.Pixels)?.px
+        if (options.diskCachePolicy.readEnabled && !options.cropBorders && !options.customDecoder &&
+            width != null && height != null
+        ) {
+            val input = try {
+                openThumbnail(
+                    file,
+                    diskCacheKey,
+                    width,
+                    height,
+                    options.scale == Scale.FILL,
+                    options.diskCachePolicy.writeEnabled,
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
+            if (input != null) {
+                val source = input.source().buffer()
+                try {
+                    snapshot?.close()
+                } catch (error: Exception) {
+                    source.close()
+                    throw error
+                }
+                return SourceFetchResult(
+                    source = ImageSource(source = source, fileSystem = FileSystem.SYSTEM),
+                    mimeType = "image/webp",
+                    dataSource = dataSource,
+                )
+            }
+        }
         return SourceFetchResult(
             source = ImageSource(
                 file = file.toOkioPath(),
                 fileSystem = FileSystem.SYSTEM,
                 diskCacheKey = diskCacheKey,
+                closeable = snapshot,
             ),
             mimeType = "image/*",
-            dataSource = DataSource.DISK,
+            dataSource = dataSource,
         )
     }
 
-    private fun fileUriLoader(uri: String): FetchResult {
+    private suspend fun fileUriLoader(uri: String): FetchResult {
         val localCoverCacheFile = coverFileLazy.value
         if (localCoverCacheFile?.exists() == true && options.diskCachePolicy.readEnabled) {
             return fileLoader(localCoverCacheFile)
@@ -178,11 +221,7 @@ class MangaCoverFetcher(
                 }
 
                 // Read from snapshot
-                return SourceFetchResult(
-                    source = snapshot.toImageSource(),
-                    mimeType = "image/*",
-                    dataSource = DataSource.DISK,
-                )
+                return snapshotLoader(snapshot, DataSource.DISK)
             }
 
             // Fetch from network
@@ -198,11 +237,7 @@ class MangaCoverFetcher(
                 // Read from disk cache
                 snapshot = writeToDiskCache(response)
                 if (snapshot != null) {
-                    return SourceFetchResult(
-                        source = snapshot.toImageSource(),
-                        mimeType = "image/*",
-                        dataSource = DataSource.NETWORK,
-                    )
+                    return snapshotLoader(snapshot, DataSource.NETWORK)
                 }
 
                 // Read from response if cache is unused or unusable
@@ -324,6 +359,17 @@ class MangaCoverFetcher(
         }
     }
 
+    internal fun snapshotLoader(snapshot: DiskCache.Snapshot, dataSource: DataSource): FetchResult {
+        if (imageLoader.diskCache?.fileSystem == FileSystem.SYSTEM) {
+            return fileLoader(snapshot.data.toFile(), snapshot, dataSource)
+        }
+        return SourceFetchResult(
+            source = snapshot.toImageSource(),
+            mimeType = "image/*",
+            dataSource = dataSource,
+        )
+    }
+
     private fun DiskCache.Snapshot.toImageSource(): ImageSource {
         return ImageSource(
             file = data,
@@ -375,6 +421,7 @@ class MangaCoverFetcher(
                 },
                 callFactoryLazy = callFactoryLazy,
                 imageLoader = imageLoader,
+                openThumbnail = coverCache::openThumbnail,
             )
         }
     }
@@ -403,6 +450,7 @@ class MangaCoverFetcher(
                 },
                 callFactoryLazy = callFactoryLazy,
                 imageLoader = imageLoader,
+                openThumbnail = coverCache::openThumbnail,
             )
         }
     }

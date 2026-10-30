@@ -2601,9 +2601,9 @@ class LocalFolderSource(
             (filters.format.isBlank() || format.contains(filters.format, ignoreCase = true))
     }
 
-    private fun findCover(files: List<UniFile>): UniFile? {
+    internal fun findCover(files: List<UniFile>): UniFile? {
         return files
-            .filter { !it.isDirectory && ImageUtil.isImage(it.name) { it.openInputStream() } }
+            .filter { !it.isDirectory }
             .sortedWith { first, second ->
                 val firstCover = first.name.orEmpty().lowercase().startsWith("cover")
                 val secondCover = second.name.orEmpty().lowercase().startsWith("cover")
@@ -2612,7 +2612,7 @@ class LocalFolderSource(
                     else -> first.name.orEmpty().compareToCaseInsensitiveNaturalOrder(second.name.orEmpty())
                 }
             }
-            .firstOrNull()
+            .firstOrNull { ImageUtil.isImage(it.name?.lowercase(java.util.Locale.ROOT)) { it.openInputStream() } }
     }
 
     private fun findFirstChapter(files: List<UniFile>): UniFile? {

@@ -28,6 +28,7 @@ import koharia.connection.ConnectionBrowseScreen
 import koharia.connection.ConnectionPreferences
 import koharia.connection.LibraryContentScope
 import koharia.connection.NO_ACTIVE_CONNECTION
+import koharia.connection.ui.ConnectionLibraryScreen
 import koharia.connection.ui.LibraryConnectionProfilesScreen
 import koharia.connection.ui.LibraryConnectionSetupPrompt
 import tachiyomi.domain.source.service.SourceManager
@@ -52,11 +53,21 @@ sealed class ConnectionLibraryTab(
     @Volatile
     private var runtimeBrowseScreen: ConnectionBrowseScreen? = null
 
+    @Transient
+    @Volatile
+    private var runtimeAggregateScreen: ConnectionBrowseScreen? = null
+
     @Transient private var runtimeBrowseSource: Source? = null
 
     private fun browseScreen(
         activeConnectionId: Long = Injekt.get<ConnectionPreferences>().activeConnectionId.get(),
     ): ConnectionBrowseScreen? {
+        if (libraryScope == LibraryContentScope.ALL) {
+            return synchronized(this) {
+                if (runtimeAggregateScreen == null) runtimeAggregateScreen = ConnectionLibraryScreen()
+                runtimeAggregateScreen
+            }
+        }
         return synchronized(this) {
             val source = Injekt.get<SourceManager>().get(activeConnectionId)
             if (runtimeBrowseSource !== source) {
@@ -109,7 +120,7 @@ sealed class ConnectionLibraryTab(
         val activeSource = sources.firstOrNull { it.id == activeServerId }
         // Preserve navigation state only while the same owning Source is registered.
         val activeScreen = remember(activeServerId, activeSource) { browseScreen(activeServerId) }
-        if (activeServerId == NO_ACTIVE_CONNECTION) {
+        if (libraryScope != LibraryContentScope.ALL && activeServerId == NO_ACTIVE_CONNECTION) {
             Scaffold { contentPadding ->
                 LibraryConnectionSetupPrompt(
                     onConfigureConnection = { navigator.push(LibraryConnectionProfilesScreen(openAddDialog = true)) },
@@ -145,11 +156,14 @@ sealed class ConnectionLibraryTab(
     suspend fun searchGenre(name: String) = browseScreen()?.searchGenre(name)
 
     private fun clearRuntimeState() {
-        val cachedSourceId = synchronized(this) {
+        val (cachedSourceId, aggregateScreen) = synchronized(this) {
             (runtimeBrowseScreen as? cafe.adriel.voyager.core.screen.Screen)?.let(ScreenModelStore::onDispose)
+            val aggregate = (runtimeAggregateScreen as? cafe.adriel.voyager.core.screen.Screen)
+            runtimeAggregateScreen = null
             runtimeBrowseSource = null
-            runtimeBrowseScreen?.sourceId.also { runtimeBrowseScreen = null }
+            runtimeBrowseScreen?.sourceId.also { runtimeBrowseScreen = null } to aggregate
         }
+        aggregateScreen?.let(ScreenModelStore::onDispose)
         val activeSourceId = Injekt.get<ConnectionPreferences>().activeConnectionId.get()
         setOfNotNull(
             cachedSourceId,

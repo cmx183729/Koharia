@@ -24,7 +24,8 @@ class LocalCacheCleaner(
         return Formatter.formatFileSize(
             context,
             LocalTempCacheDirectoryProvider.temporaryCacheSize(context) + koharia.smanga.SmangaPdfCache.size(context) +
-                koharia.kavita.KavitaPdfCache.size(context) + NetworkStorageRuntime.cachedContentSize(context),
+                koharia.kavita.KavitaPdfCache.size(context) + NetworkStorageRuntime.cachedContentSize(context) +
+                coverCache.thumbnailSize(),
         )
     }
 
@@ -43,6 +44,7 @@ class LocalCacheCleaner(
     suspend fun clearAllTemporaryCache(): Int {
         var deleted = 0
         deleted += clearChapterCache()
+        deleted += coverCache.clearThumbnails()
         deleted += networkHelper.clearDiskCache()
         deleted += LocalTempCacheDirectoryProvider.clearMetadataCache(context)
         deleted += downloadCache.clearDiskCache()

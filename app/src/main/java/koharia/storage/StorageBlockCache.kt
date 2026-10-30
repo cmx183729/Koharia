@@ -41,6 +41,95 @@ class StorageBlockCache(
     suspend fun read(entry: StorageEntry, offset: Long, length: Int): ByteArray = prepare(entry).read(offset, length)
     suspend fun prepareComplete(entry: StorageEntry): File = prepare(entry).prepareComplete()
 
+    /** Keeps a verified block per reader instead of re-reading and hashing it for each small read. */
+    suspend fun openInputStream(entry: StorageEntry, preferComplete: Boolean = false): java.io.InputStream {
+        if (preferComplete) {
+            try {
+                return openCompleteInputStream(entry)
+            } catch (error: StorageFailure) {
+                if (error.reason != StorageFailure.Reason.SPACE) throw error
+            }
+        }
+        val resource = prepare(entry)
+        val lease = resource.acquire()
+        return object : java.io.InputStream() {
+            private var position = 0L
+            private var closed = false
+            private var blockStart = -1L
+            private var block = byteArrayOf()
+            override fun read(): Int = ByteArray(1).let { if (read(it) < 0) -1 else it[0].toInt() and 255 }
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                check(!closed)
+                session.checkActive()
+                require(offset >= 0 && length >= 0 && offset <= buffer.size - length)
+                if (length == 0) return 0
+                if (position >= entry.size) return -1
+                val start = position / BLOCK_SIZE * BLOCK_SIZE
+                if (blockStart != start) {
+                    block = kotlinx.coroutines.runBlocking(Dispatchers.IO) { resource.read(start, BLOCK_SIZE) }
+                    blockStart = start
+                }
+                val withinBlock = (position - blockStart).toInt()
+                val count = minOf(length, block.size - withinBlock)
+                if (count <= 0) throw StorageFailure(StorageFailure.Reason.PROTOCOL)
+                block.copyInto(buffer, offset, withinBlock, withinBlock + count)
+                position += count
+                return count
+            }
+            override fun skip(count: Long): Long {
+                check(!closed)
+                session.checkActive()
+                return count.coerceIn(0, entry.size - position).also { position += it }
+            }
+            override fun close() {
+                if (closed) return
+                closed = true
+                block = byteArrayOf()
+                lease.close()
+            }
+        }
+    }
+
+    /** Sequential images use one validated transfer, with a lease held until the decoder closes. */
+    suspend fun openCompleteInputStream(entry: StorageEntry): java.io.InputStream {
+        val resource = prepare(entry)
+        val lease = resource.acquire()
+        return try {
+            val input = resource.prepareComplete().inputStream()
+            object : java.io.FilterInputStream(input) {
+                private var closed = false
+                private fun checkReadable() {
+                    check(!closed)
+                    session.checkActive()
+                }
+                override fun read(): Int {
+                    checkReadable()
+                    return `in`.read()
+                }
+                override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                    checkReadable()
+                    return `in`.read(buffer, offset, length)
+                }
+                override fun skip(count: Long): Long {
+                    checkReadable()
+                    return `in`.skip(count)
+                }
+                override fun close() {
+                    if (closed) return
+                    closed = true
+                    try {
+                        super.close()
+                    } finally {
+                        lease.close()
+                    }
+                }
+            }
+        } catch (error: Throwable) {
+            lease.close()
+            throw error
+        }
+    }
+
     private suspend fun read(entry: StorageEntry, directory: File, offset: Long, length: Int): ByteArray = withContext(
         Dispatchers.IO,
     ) {
@@ -149,7 +238,14 @@ class StorageBlockCache(
             val temporary = File(directory, "complete.part")
             val coroutine = currentCoroutineContext()
             try {
-                if (index.access { isCompleteValid(complete, entry) }) return@exclusive complete
+                val cached = index.access {
+                    if (!isCompleteValid(complete, entry)) return@access false
+                    touch(complete)
+                    verifiedFiles[complete.path] =
+                        complete.lastModified() to File(directory, "complete.ok").lastModified()
+                    true
+                }
+                if (cached) return@exclusive complete
                 index.access {
                     remove(complete)
                     session.checkActive()
@@ -160,18 +256,22 @@ class StorageBlockCache(
                     backend.copyTo(
                         entry,
                         object : java.io.FilterOutputStream(stream) {
+                            private var written = 0L
                             override fun write(value: Int) {
                                 checkWrite(1)
                                 out.write(value)
+                                written++
                             }
                             override fun write(buffer: ByteArray, offset: Int, length: Int) {
+                                require(offset >= 0 && length >= 0 && offset <= buffer.size - length)
                                 checkWrite(length)
                                 out.write(buffer, offset, length)
+                                written += length
                             }
                             private fun checkWrite(length: Int) {
                                 coroutine.ensureActive()
                                 session.checkActive()
-                                if (temporary.length() > entry.size - length) {
+                                if (written > entry.size - length) {
                                     throw StorageFailure(StorageFailure.Reason.PROTOCOL)
                                 }
                             }

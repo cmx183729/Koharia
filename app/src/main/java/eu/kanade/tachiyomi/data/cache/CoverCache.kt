@@ -2,8 +2,13 @@ package eu.kanade.tachiyomi.data.cache
 
 import android.content.Context
 import eu.kanade.tachiyomi.util.storage.DiskUtil
+import koharia.scan.ThumbnailCache
+import logcat.LogPriority
+import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.manga.model.Manga
 import java.io.File
+import java.io.IOException
+import java.io.InputStream
 
 /**
  * Class used to create cover cache.
@@ -23,6 +28,24 @@ class CoverCache(private val context: Context) {
      * Cache directory used for cache management.
      */
     private val cacheDir = getCacheDir(COVERS_DIR)
+    private val thumbnails by lazy { ThumbnailCache(File(context.filesDir, "cover-thumbnails"), 128L * 1024 * 1024) }
+
+    fun openThumbnail(
+        source: File,
+        identity: String,
+        width: Int,
+        height: Int,
+        fill: Boolean,
+        allowCreate: Boolean,
+    ): InputStream? = try {
+        thumbnails.openOrCreate(source, identity, width, height, fill, allowCreate)
+    } catch (error: IOException) {
+        logcat(LogPriority.WARN, error) { "Unable to load generated cover thumbnail" }
+        null
+    } catch (error: IllegalStateException) {
+        logcat(LogPriority.WARN, error) { "Unable to store generated cover thumbnail" }
+        null
+    }
 
     /**
      * Returns the cover from cache.
@@ -67,8 +90,12 @@ class CoverCache(private val context: Context) {
         return deleted
     }
 
+    fun thumbnailSize(): Long = thumbnails.size()
+
+    fun clearThumbnails(): Int = thumbnails.removeAll()
+
     fun clear(): Int {
-        return clearDirectory(cacheDir)
+        return clearThumbnails() + clearDirectory(cacheDir)
     }
 
     private fun getCacheDir(dir: String): File {

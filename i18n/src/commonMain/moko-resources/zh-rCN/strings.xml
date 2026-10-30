@@ -1607,7 +1607,9 @@
     <string name="local_library_add_existing">添加已有目录</string>
     <string name="local_library_add_existing_summary">选择供 Koharia 扫描的漫画或书籍目录，不会移动其中的文件。</string>
     <string name="local_library_scan_selected_directory">直接扫描所选目录</string>
-    <string name="local_library_scan_selected_directory_summary">将所选文件夹直接用作此书架的扫描根目录，不创建 Comics 或 Books 子目录。</string>
+    <string name="local_library_scan_selected_directory_summary">将所选文件夹直接用作此书架的扫描根目录，不创建 Comics 或 Books 子目录。关闭此项可改为创建管理子目录。</string>
+    <string name="local_library_separate_directories_summary">同时启用漫画和书籍时，将分别创建或复用 Comics、Books 子目录。仅启用一种类型即可直接读取所选目录。</string>
+    <string name="local_library_selected_directory_pending">保存时，此书架将直接读取所选目录，不创建内容子目录</string>
     <string name="local_library_create_managed">创建书库目录</string>
     <string name="local_library_create_managed_summary">选择存放位置，将为当前书库创建 Comics 或 Books 子目录及元数据目录。</string>
     <string name="local_library_metadata_group">元数据</string>
@@ -2216,8 +2218,8 @@
     <string name="storage_smb_no_share">使用登录凭据浏览服务器共享并选择文件夹</string>
     <string name="storage_smb_no_shares">服务器未返回可用的共享文件夹。</string>
     <string name="storage_setup_auth_summary">使用填写的服务器地址与凭据完成认证，下一步再选择文件夹。修改连接信息会清空草稿中的目录选择，并需要重新认证。</string>
-    <string name="storage_setup_remote_root_summary">选择此库的默认文件夹，下一页在其范围内为书架选择目录。其中的 .koharia 用于库身份、阅读进度同步与操作记录；元数据和封面按所选元数据方式保存。目录索引、内容缓存和手动下载仍保存在本机。库数据在完成并保存设置后写入；主动新建文件夹会立即在服务器创建。</string>
-    <string name="storage_setup_local_root_summary">选择此库的默认文件夹。保存时，为尚未指定目录的默认书架建立 Comics、Books 子目录，并由 .koharia 保存库身份和元数据；也可为书架指定已有目录。此选择不会更改全局备份、下载和缓存的存储位置。</string>
+    <string name="storage_setup_remote_root_summary">默认使用服务器地址中的目录，也可浏览更换。仅启用一种内容类型时默认直接读取，下一页也可改为创建管理子目录。其中的 .koharia 用于库身份、阅读进度同步与操作记录；元数据和封面按所选元数据方式保存。目录索引、内容缓存和手动下载仍保存在本机。设置在保存时写入；主动新建文件夹会立即在服务器创建。</string>
+    <string name="storage_setup_local_root_summary">选择已有漫画或书籍所在目录。仅启用一种内容类型时默认直接读取，不创建 Comics 或 Books 子目录；下一页可调整内容类型或改为创建管理子目录。库身份和元数据可能按所选设置使用 .koharia。此选择不会更改全局备份、下载和缓存的存储位置。</string>
     <string name="storage_setup_default_folder">库的默认文件夹</string>
     <string name="storage_setup_root_locked">如需更换默认文件夹，请先移除草稿中已选择的书架目录。</string>
     <string name="storage_create_denied">没有在此处创建文件夹的权限。</string>

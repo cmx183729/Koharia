@@ -128,6 +128,10 @@ class LocalImageComicSourceTest {
                     LibraryConnectionProfile(sourceId, "local", "Fixture"),
                 )
             source = active
+            val cover = image("cover.JPG")
+            val sidecar = image("ametadata")
+            assertSame(cover, active.findCover(images + sidecar + cover))
+            (images + sidecar + cover).forEach { verify(exactly = 0) { it.openInputStream() } }
             val manga = SManga.create().apply {
                 url = LocalLibraryLocator.seriesUrl(sourceId, root.id, locator)
                 title = "Comic"

@@ -21,6 +21,18 @@ class ArchiveMetadataParserTest {
     }
 
     @Test
+    fun `rejects doctypes in comic info metadata`() {
+        val xml = """
+            <!DOCTYPE ComicInfo [<!ENTITY external SYSTEM "file:///does-not-exist">]>
+            <ComicInfo><Title>&external;</Title></ComicInfo>
+        """.trimIndent().encodeToByteArray()
+
+        assertThrows(Exception::class.java) {
+            ArchiveMetadataParser.comicInfo(xml)
+        }
+    }
+
+    @Test
     fun `bounds ametadata streams before parsing`() {
         val bytes = """{"title":"Stream gallery","tags":"artist:test"}""".encodeToByteArray()
         assertEquals("Stream gallery", ArchiveMetadataParser.ametadata(bytes.inputStream()).title)

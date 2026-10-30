@@ -8,9 +8,11 @@ import koharia.storage.StorageFailure
 import koharia.storage.StoragePath
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import tachiyomi.core.common.util.system.ImageUtil
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.Locale
 
 /** Compatibility boundary for existing local parsers. Metadata getters never access the network. */
 class RemoteStorageFile(val runtime: NetworkStorageRuntime, var storagePath: String) : UniFile(null) {
@@ -85,29 +87,8 @@ class RemoteStorageFile(val runtime: NetworkStorageRuntime, var storagePath: Str
     }
     override fun openInputStream(): InputStream {
         val current = entry() ?: throw StorageFailure(StorageFailure.Reason.NOT_FOUND)
-        val lease = runBlocking(Dispatchers.IO) { runtime.cache.acquire(current) }
-        return object : InputStream() {
-            private var position = 0L
-            private var closed = false
-            override fun read(): Int = ByteArray(1).let { if (read(it) < 0) -1 else it[0].toInt() and 255 }
-            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-                check(!closed)
-                require(offset >= 0 && length >= 0 && offset <= buffer.size - length)
-                if (length == 0) return 0
-                if (position >= current.size) return -1
-                val bytes =
-                    runBlocking(Dispatchers.IO) { runtime.cache.read(current, position, minOf(length, 256 * 1024)) }
-                bytes.copyInto(buffer, offset)
-                position += bytes.size
-                return bytes.size
-            }
-            override fun skip(count: Long): Long = count.coerceIn(0, current.size - position).also { position += it }
-            override fun close() {
-                if (!closed) {
-                    closed = true
-                    lease.close()
-                }
-            }
+        return runBlocking(Dispatchers.IO) {
+            runtime.cache.openInputStream(current, preferComplete = ImageUtil.isImage(name.lowercase(Locale.ROOT)))
         }
     }
     override fun openOutputStream(): OutputStream = openOutputStream(false)

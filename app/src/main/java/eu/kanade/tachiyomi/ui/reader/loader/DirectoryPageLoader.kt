@@ -24,7 +24,7 @@ internal class DirectoryPageLoader(
             child.takeIf {
                 !it.isDirectory &&
                     (!excludeAuxiliary || !koharia.source.local.isLocalAuxiliaryFile(name)) &&
-                    ImageUtil.isImage(it.name) { it.openInputStream() }
+                    ImageUtil.isImage(name.lowercase(java.util.Locale.ROOT)) { it.openInputStream() }
             }?.let { it to name }
         }
         return files

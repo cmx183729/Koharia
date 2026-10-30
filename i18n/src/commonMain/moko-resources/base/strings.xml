@@ -1745,7 +1745,9 @@
     <string name="local_library_add_existing">Add existing directory</string>
     <string name="local_library_add_existing_summary">Choose a comic or book folder that Koharia should scan without moving its files.</string>
     <string name="local_library_scan_selected_directory">Scan the selected directory directly</string>
-    <string name="local_library_scan_selected_directory_summary">Use the selected folder as this shelf root. Koharia will not create Comics or Books subfolders.</string>
+    <string name="local_library_scan_selected_directory_summary">Use the selected folder as this shelf root. Koharia will not create Comics or Books subfolders. Turn this off to create managed subfolders instead.</string>
+    <string name="local_library_separate_directories_summary">When both comics and books are enabled, separate Comics and Books subfolders are created or reused. Enable only one type to read the selected directory directly.</string>
+    <string name="local_library_selected_directory_pending">On save, this shelf will read the selected folder directly without creating a content subfolder</string>
     <string name="local_library_create_managed">Create library directories</string>
     <string name="local_library_create_managed_summary">Choose a location. A Comics or Books subfolder will be created for this library, together with a metadata directory.</string>
     <string name="local_library_metadata_group">Metadata</string>
@@ -2354,8 +2356,8 @@
     <string name="storage_smb_no_share">Sign in to browse server shares and select a folder</string>
     <string name="storage_smb_no_shares">No shared folders were returned by this server.</string>
     <string name="storage_setup_auth_summary">Authenticate with the entered server addresses and credentials. Folders are selected in the next step. Changing connection details clears draft folder selections and requires authentication again.</string>
-    <string name="storage_setup_remote_root_summary">Choose the default folder for this library. Shelf folders are selected within it on the next page. Its .koharia folder stores the library identity, progress sync and operation records; metadata and covers follow the selected metadata option. Indexes, content caches and manual downloads remain on this device. Library data is written when setup is saved; explicitly creating a folder takes effect immediately.</string>
-    <string name="storage_setup_local_root_summary">Choose this library’s default folder. On saving, missing default shelves get Comics and Books subfolders, and .koharia stores the library identity and metadata. Existing folders can also be assigned to shelves. This does not change the app-wide storage location for backups, downloads or caches.</string>
+    <string name="storage_setup_remote_root_summary">Use the folder in the server address, or browse to choose another. A single enabled content type reads it directly by default; the next page also offers managed subfolders. Its .koharia folder stores library identity, progress sync and operation records; metadata and covers follow the selected metadata option. Indexes, content caches and manual downloads remain on this device. Setup data is written on save; explicitly creating a folder takes effect immediately.</string>
+    <string name="storage_setup_local_root_summary">Choose the folder containing your comics or books. A single enabled content type reads it directly by default, without creating Comics or Books subfolders. The next page offers managed subfolders and content types. Library identity and metadata may use .koharia according to the selected settings. This does not change the app-wide backup, download or cache location.</string>
     <string name="storage_setup_default_folder">Default library folder</string>
     <string name="storage_setup_root_locked">Remove the draft shelf folder selections before changing the default folder.</string>
     <string name="storage_create_denied">You do not have permission to create folders here.</string>

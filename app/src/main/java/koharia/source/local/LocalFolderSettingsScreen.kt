@@ -125,7 +125,9 @@ class LocalFolderSettingsScreen(
                 save = { json.encodeToString(it) },
                 restore = { json.decodeFromString(it) },
             ),
-        ) { mutableStateOf(initial.withInitialBookshelves(comicsName, booksName)) }
+        ) {
+            mutableStateOf(initial.withInitialBookshelves(comicsName, booksName).initialSetupDraft(isNew))
+        }
         var assignments by rememberSaveable(
             sourceId,
             stateSaver = Saver<Map<String, String>, String>(
@@ -137,7 +139,8 @@ class LocalFolderSettingsScreen(
             mutableStateOf(!createInitialDirectories)
         }
         var isPreparingDirectories by remember { mutableStateOf(false) }
-        var useSelectedDirectory by rememberSaveable(sourceId) { mutableStateOf(false) }
+        var useSelectedDirectory by rememberSaveable(sourceId) { mutableStateOf(true) }
+        val directlyUseSelectedDirectory = useSelectedDirectory && config.canUseSelectedDirectory()
         var selectedDefaultShelfIds by rememberSaveable(sourceId) { mutableStateOf(emptyList<String>()) }
         val defaultModesChosen = config.hasSelectedDefaultModes(selectedDefaultShelfIds)
         var connectionName by rememberSaveable(sourceId) { mutableStateOf(profileName) }
@@ -288,6 +291,7 @@ class LocalFolderSettingsScreen(
                                     assignments,
                                     isNew,
                                     connectionName = connectionName.trim(),
+                                    useSelectedDirectory = directlyUseSelectedDirectory,
                                     onSaved = { savedId = it },
                                 )
                             }
@@ -317,7 +321,7 @@ class LocalFolderSettingsScreen(
                                 defaultLocalDirectory,
                                 directoryDisplayPath(context, Uri.parse(defaultLocalDirectory)),
                                 json,
-                                useSelectedDirectory = useSelectedDirectory,
+                                useSelectedDirectory = directlyUseSelectedDirectory,
                             )
                         }
                         initialDirectoriesCreated = true
@@ -716,6 +720,7 @@ class LocalFolderSettingsScreen(
                                         try {
                                             tachiyomi.core.common.util.lang.withIOContext { network.authenticate() }
                                             authenticated = true
+                                            selectedRemoteRoot = network.initialRootSelection(selectedRemoteRoot)
                                             setupStep = LocalLibrarySetupStep.ROOT
                                         } catch (error: kotlinx.coroutines.CancellationException) {
                                             throw error
@@ -761,34 +766,6 @@ class LocalFolderSettingsScreen(
                                 },
                             )
                         }
-                        if (!remoteMode && config.enabledContentTypes.count {
-                                it != LocalLibraryContentType.MIXED
-                            } == 1
-                        ) {
-                            item {
-                                ListItem(
-                                    modifier = Modifier.toggleable(
-                                        value = useSelectedDirectory,
-                                        enabled = !isSaving && !isPreparingDirectories,
-                                        role = Role.Checkbox,
-                                        onValueChange = { useSelectedDirectory = it },
-                                    ),
-                                    headlineContent = {
-                                        Text(stringResource(MR.strings.local_library_scan_selected_directory))
-                                    },
-                                    supportingContent = {
-                                        Text(stringResource(MR.strings.local_library_scan_selected_directory_summary))
-                                    },
-                                    leadingContent = {
-                                        Checkbox(
-                                            checked = useSelectedDirectory,
-                                            onCheckedChange = null,
-                                            enabled = !isSaving && !isPreparingDirectories,
-                                        )
-                                    },
-                                )
-                            }
-                        }
                         if (config.roots.isNotEmpty()) {
                             item {
                                 SetupNotice(stringResource(MR.strings.storage_setup_root_locked))
@@ -833,6 +810,40 @@ class LocalFolderSettingsScreen(
                         } else {
                             item { SetupNotice(stringResource(MR.strings.local_library_shelf_first_summary)) }
                         }
+                        if (!config.setupCompleted) {
+                            item {
+                                val canUseSelectedDirectory = config.canUseSelectedDirectory()
+                                ListItem(
+                                    modifier = Modifier.toggleable(
+                                        value = directlyUseSelectedDirectory,
+                                        enabled = canUseSelectedDirectory && !isSaving && !isPreparingDirectories,
+                                        role = Role.Checkbox,
+                                        onValueChange = { useSelectedDirectory = it },
+                                    ),
+                                    headlineContent = {
+                                        Text(stringResource(MR.strings.local_library_scan_selected_directory))
+                                    },
+                                    supportingContent = {
+                                        Text(
+                                            stringResource(
+                                                if (canUseSelectedDirectory) {
+                                                    MR.strings.local_library_scan_selected_directory_summary
+                                                } else {
+                                                    MR.strings.local_library_separate_directories_summary
+                                                },
+                                            ),
+                                        )
+                                    },
+                                    leadingContent = {
+                                        Checkbox(
+                                            checked = directlyUseSelectedDirectory,
+                                            onCheckedChange = null,
+                                            enabled = canUseSelectedDirectory && !isSaving && !isPreparingDirectories,
+                                        )
+                                    },
+                                )
+                            }
+                        }
                         listOf(LocalLibraryContentType.COMICS, LocalLibraryContentType.BOOKS).forEach { type ->
                             val enabled = type in config.enabledContentTypes
                             if (!config.setupCompleted) {
@@ -874,7 +885,13 @@ class LocalFolderSettingsScreen(
                                 val directorySummary = if (createInitialDirectories && !initialDirectoriesCreated &&
                                     config.bookshelfRoots(shelf.id).isEmpty()
                                 ) {
-                                    stringResource(MR.strings.local_library_auto_directory_pending)
+                                    stringResource(
+                                        if (directlyUseSelectedDirectory) {
+                                            MR.strings.local_library_selected_directory_pending
+                                        } else {
+                                            MR.strings.local_library_auto_directory_pending
+                                        },
+                                    )
                                 } else {
                                     stringResource(
                                         MR.strings.local_library_shelf_directory_count,

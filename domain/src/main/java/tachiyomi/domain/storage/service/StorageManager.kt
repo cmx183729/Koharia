@@ -23,8 +23,10 @@ class StorageManager(
 
     private val scope = CoroutineScope(Dispatchers.IO)
 
+    private var baseDirUri = storagePreferences.baseStorageDirectory.get()
+
     @Volatile
-    private var baseDir: UniFile? = getBaseDir(storagePreferences.baseStorageDirectory.get())
+    private var baseDir: UniFile? = getBaseDir(baseDirUri)
 
     private val downloadsDirectoryLock = Any()
 
@@ -39,8 +41,8 @@ class StorageManager(
         storagePreferences.baseStorageDirectory.changes()
             .drop(1)
             .distinctUntilChanged()
-            .onEach { uri ->
-                baseDir = getBaseDir(uri)
+            .onEach {
+                currentBaseDir()
                 invalidateDownloadsDirectoryCache()
                 _changes.send(Unit)
             }
@@ -52,13 +54,23 @@ class StorageManager(
             .takeIf { it?.exists() == true }
     }
 
+    private fun currentBaseDir(): UniFile? = synchronized(downloadsDirectoryLock) {
+        val uri = storagePreferences.baseStorageDirectory.get()
+        if (uri != baseDirUri || baseDir == null) {
+            baseDir = getBaseDir(uri)
+            baseDirUri = uri
+            cachedDownloadsDirectory = null
+        }
+        baseDir
+    }
+
     fun getAutomaticBackupsDirectory(): UniFile? {
-        return baseDir?.createDirectory(AUTOMATIC_BACKUPS_PATH)
+        return currentBaseDir()?.createDirectory(AUTOMATIC_BACKUPS_PATH)
     }
 
     fun getDownloadsDirectory(): UniFile? {
         return synchronized(downloadsDirectoryLock) {
-            val root = baseDir
+            val root = currentBaseDir()
             val directory = root?.createDirectory(DOWNLOADS_PATH).also {
                 DiskUtil.createNoMediaFile(it, context)
             }
@@ -71,12 +83,10 @@ class StorageManager(
         }
     }
 
-    fun getDownloadsDirectoryForRead(): UniFile? {
-        cachedDownloadsDirectory?.takeIf { it.isValid(baseDir, currentTimeMillis()) }?.let { return it.directory }
-        return synchronized(downloadsDirectoryLock) {
-            cachedDownloadsDirectory?.takeIf { it.isValid(baseDir, currentTimeMillis()) }?.directory
-                ?: getDownloadsDirectory()
-        }
+    fun getDownloadsDirectoryForRead(): UniFile? = synchronized(downloadsDirectoryLock) {
+        val root = currentBaseDir()
+        cachedDownloadsDirectory?.takeIf { it.isValid(root, currentTimeMillis()) }?.directory
+            ?: getDownloadsDirectory()
     }
 
     fun invalidateDownloadsDirectoryCache() {
@@ -86,7 +96,7 @@ class StorageManager(
     }
 
     fun getLocalSourceDirectory(): UniFile? {
-        return baseDir?.createDirectory(LOCAL_SOURCE_PATH)
+        return currentBaseDir()?.createDirectory(LOCAL_SOURCE_PATH)
     }
 
     fun getCustomCoversDirectory(create: Boolean = false): UniFile? {

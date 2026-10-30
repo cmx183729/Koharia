@@ -63,6 +63,21 @@ class DirectoryPageLoaderTest {
     }
 
     @Test
+    fun `uppercase image names remain lazy without content sniff requests`() = runTest {
+        val directory = mockk<UniFile>()
+        val children = listOf(image("2.JPG"), image("1.PNG"), image("3.WEBP"))
+        val pages = DirectoryPageLoader(directory, filesProvider = { children }).getPages()
+        assertEquals(3, pages.size)
+        children.forEach { verify(exactly = 0) { it.openInputStream() } }
+        assertEquals(
+            listOf("1.PNG", "2.JPG", "3.WEBP"),
+            pages.map {
+                it.stream!!().use { stream -> stream.readBytes().decodeToString() }
+            },
+        )
+    }
+
+    @Test
     fun `ordinary directory enumeration retains all pages and optionally excludes auxiliary images`() = runTest {
         val directory = mockk<UniFile>()
         val cover = image("cover.jpg")

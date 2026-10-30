@@ -12,6 +12,22 @@ class LocalLibraryInitialSetupTest {
     private val local = LibraryConnectionProfile(1, LocalFolderConnectionProvider.ID, "Local")
 
     @Test
+    fun `new library draft defaults to comics while saved configurations keep their enabled types`() {
+        val draft = LocalLibraryConfig().withInitialBookshelves("Comics", "Books").initialSetupDraft(isNew = true)
+        assertEquals(setOf(LocalLibraryContentType.COMICS), draft.enabledContentTypes)
+        assertTrue(draft.canUseSelectedDirectory())
+        assertEquals(
+            listOf(LocalLibraryContentType.COMICS),
+            draft.enabledLibraryConfiguration().bookshelves.map { it.contentType },
+        )
+        assertEquals(config, config.initialSetupDraft(isNew = false))
+        val completed = config.copy(setupCompleted = true)
+        assertEquals(completed, completed.initialSetupDraft(isNew = true))
+        val existing = config.copy(roots = listOf(LocalLibraryRootConfig(id = "keep")))
+        assertEquals(existing, existing.initialSetupDraft(isNew = true))
+    }
+
+    @Test
     fun `first local connection creates directories even when network connections already exist`() {
         assertTrue(shouldCreateInitialLocalDirectories(1, config, listOf(local)))
         assertTrue(
@@ -46,6 +62,37 @@ class LocalLibraryInitialSetupTest {
         assertFalse(config.hasSelectedDefaultModes(listOf("other", comics)))
         assertTrue(config.hasSelectedDefaultModes(listOf(comics, books)))
         assertTrue(config.copy(setupCompleted = true).hasSelectedDefaultModes(emptyList()))
+    }
+
+    @Test
+    fun `local setup reads selected directory by default for either single content type`() {
+        val context = io.mockk.mockk<android.content.Context>()
+        for (type in listOf(LocalLibraryContentType.COMICS, LocalLibraryContentType.BOOKS)) {
+            val input = config.copy(enabledContentTypes = setOf(type))
+            val result = prepareInitialLocalDirectories(
+                context,
+                input,
+                "content://selected",
+                "Selected",
+                kotlinx.serialization.json.Json,
+            )
+            val root = result.roots.single()
+            assertEquals("content://selected", root.treeUri)
+            assertEquals("", root.relativePath)
+            assertEquals(type, root.contentType)
+            assertFalse(root.managed)
+            assertEquals(
+                result,
+                prepareInitialLocalDirectories(
+                    context,
+                    result,
+                    "content://different",
+                    "Different",
+                    kotlinx.serialization.json.Json,
+                ),
+            )
+        }
+        io.mockk.verify { context wasNot io.mockk.Called }
     }
 
     @Test

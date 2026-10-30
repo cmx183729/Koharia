@@ -12,6 +12,40 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class NetworkStorageDirectoryTest {
+    @Test fun `configured DAV folder is preselected and SMB still requires a share`() {
+        fun draft(mode: koharia.storage.LibraryStorageMode, address: String) = NetworkStorageDraft(
+            koharia.storage.NetworkStorageConfiguration(mode = mode, address = address),
+            "fixture",
+            "dummy",
+        )
+        assertEquals(
+            "comics",
+            draft(koharia.storage.LibraryStorageMode.WEBDAV, "https://example.test/comics/").initialRootSelection(),
+        )
+        assertEquals(
+            "",
+            draft(koharia.storage.LibraryStorageMode.WEBDAV, "https://example.test/").initialRootSelection(),
+        )
+        assertEquals(
+            "share/books",
+            draft(koharia.storage.LibraryStorageMode.SMB, "smb://example.test/share/books").initialRootSelection(),
+        )
+        assertEquals(null, draft(koharia.storage.LibraryStorageMode.SMB, "smb://example.test").initialRootSelection())
+        assertEquals(null, draft(koharia.storage.LibraryStorageMode.WEBDAV, "bad address").initialRootSelection())
+        for (mode in listOf(koharia.storage.LibraryStorageMode.WEBDAV, koharia.storage.LibraryStorageMode.SMB)) {
+            val address = if (mode ==
+                koharia.storage.LibraryStorageMode.SMB
+            ) {
+                "smb://example.test/share"
+            } else {
+                "https://example.test/"
+            }
+            val configured = draft(mode, address)
+            assertEquals("chosen/subfolder", configured.initialRootSelection("chosen/subfolder"))
+            assertEquals("", configured.initialRootSelection(""))
+        }
+    }
+
     @Test fun `creation rejects unsafe names conflicts and denied permissions`() = runBlocking {
         val backend = MemoryStorageBackend()
         for (name in listOf("..", "a/b", ".koharia", " x", "a\\b")) {

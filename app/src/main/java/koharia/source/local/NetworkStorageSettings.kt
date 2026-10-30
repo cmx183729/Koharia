@@ -95,7 +95,15 @@ internal data class NetworkStorageDraft(
         )
     }
 
-    /** Setup step two only needs a server endpoint: the library folder is chosen in a later step. */
+    fun initialRootSelection(selectedRoot: String? = null): String? = selectedRoot ?: runCatching {
+        when (configuration.mode) {
+            LibraryStorageMode.SMB -> SmbAddress.parse(configuration.address).root.takeIf { it.isNotBlank() }
+            LibraryStorageMode.WEBDAV -> WebDavAddress.parse(configuration.address).root
+            LibraryStorageMode.LOCAL -> null
+        }
+    }.getOrNull()
+
+    /** Setup step two only needs a server endpoint: the library folder can be changed in a later step. */
     val endpointValid: Boolean
         get() = when (configuration.mode) {
             LibraryStorageMode.LOCAL -> true
@@ -341,6 +349,7 @@ internal suspend fun saveNetworkLibraryDraft(
     assignments: Map<String, String>,
     isNew: Boolean,
     connectionName: String? = null,
+    useSelectedDirectory: Boolean = library.canUseSelectedDirectory(),
     onSaved: (Long) -> Unit = {},
 ): LocalLibraryConfig {
     val preferences = NetworkStoragePreferences(sourceId)
@@ -379,7 +388,7 @@ internal suspend fun saveNetworkLibraryDraft(
                 }
                     ?: UUID.randomUUID().toString()
             }
-            enabled = prepareInitialNetworkDirectories(primary, enabled)
+            enabled = prepareInitialNetworkDirectories(primary, enabled, useSelectedDirectory)
             require(enabled.roots.isNotEmpty())
             enabled.roots.forEach { check(primary.stat(it.relativePath).directory) }
             if (persistent &&

@@ -5,6 +5,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.ByteArrayInputStream
 import java.nio.charset.StandardCharsets
+import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
 
 /** Metadata extracted without downloading an entire archive. */
@@ -38,9 +39,10 @@ object ArchiveMetadataParser {
         val factory = DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = false
             isExpandEntityReferences = false
-            runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
-            runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
-            runCatching { setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
+            setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true)
+            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+            setFeature("http://xml.org/sax/features/external-general-entities", false)
+            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
         }
         val document = factory.newDocumentBuilder().parse(ByteArrayInputStream(xml))
         fun text(name: String) = document.getElementsByTagName(name).item(0)?.textContent.clean()

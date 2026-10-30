@@ -60,7 +60,11 @@ class WebDavStorageBackend(
         authorization?.let { header("Authorization", it) }
         header("Accept-Encoding", "identity")
     }
-    private suspend fun execute(request: Request): Response {
+    private suspend fun execute(
+        request: Request,
+        applyRequestDelay: Boolean = true,
+        followContentRedirects: Boolean = false,
+    ): Response {
         // Unit tests and early startup may run without the preference graph; fall back to defaults.
         val scanPreferences = runCatching { Injekt.get<koharia.scan.ScanPreferences>() }.getOrNull()
         while (true) {
@@ -86,7 +90,8 @@ class WebDavStorageBackend(
         try {
             val intervalMs = (scanPreferences?.webDavRequestIntervalMs?.get() ?: 0)
                 .coerceIn(0, koharia.scan.ScanPreferences.MAX_REQUEST_INTERVAL_MS)
-            if (intervalMs > 0) {
+            // Scan politeness must not rate-limit image bodies into 256 KiB per interval.
+            if (applyRequestDelay && intervalMs > 0) {
                 requestMutex.withLock {
                     val now = android.os.SystemClock.elapsedRealtime()
                     val waitMs = (lastRequestAt + intervalMs - now).coerceAtLeast(0)
@@ -94,7 +99,11 @@ class WebDavStorageBackend(
                     lastRequestAt = android.os.SystemClock.elapsedRealtime()
                 }
             }
-            val response = client.newCall(request).await()
+            val response = if (followContentRedirects) {
+                executeContentRequest(request)
+            } else {
+                client.newCall(request).await()
+            }
             if (response.code !in 200..299) {
                 val reason = when (response.code) {
                     401 -> StorageFailure.Reason.AUTH
@@ -114,6 +123,35 @@ class WebDavStorageBackend(
         } catch (error: Throwable) {
             if (!handedOff) releasePermitBlocking()
             throw error
+        }
+    }
+
+    /** Redirect only read-only content GETs; DAV metadata and mutations keep their original endpoint. */
+    private suspend fun executeContentRequest(initial: Request): Response {
+        var query = initial
+        var redirects = 0
+        while (true) {
+            val response = client.newCall(query).await()
+            if (response.code !in setOf(301, 302, 303, 307, 308)) return response
+            query = response.use {
+                if (redirects++ >= 5) throw StorageFailure(StorageFailure.Reason.PROTOCOL)
+                val target = response.header("Location")?.let(query.url::resolve)
+                    ?: throw StorageFailure(StorageFailure.Reason.PROTOCOL)
+                if (target.username.isNotEmpty() || target.password.isNotEmpty() ||
+                    (query.url.isHttps && !target.isHttps)
+                ) {
+                    throw StorageFailure(StorageFailure.Reason.PROTOCOL)
+                }
+                query.newBuilder().url(target).apply {
+                    if (target.scheme != query.url.scheme || target.host != query.url.host ||
+                        target.port != query.url.port
+                    ) {
+                        removeHeader("Authorization")
+                        removeHeader("Cookie")
+                        removeHeader("Proxy-Authorization")
+                    }
+                }.build()
+            }
         }
     }
 
@@ -207,7 +245,7 @@ class WebDavStorageBackend(
         val query = request(entry.path).header("Range", "bytes=$offset-${offset + length - 1}").apply {
             entry.strongEtag()?.let { header("If-Match", it) }
         }.build()
-        execute(query).use { response ->
+        execute(query, applyRequestDelay = false, followContentRedirects = true).use { response ->
             if (response.code != 206 && !(response.code == 200 && offset == 0L && length.toLong() == entry.size)) {
                 throw StorageFailure(StorageFailure.Reason.UNSUPPORTED)
             }
@@ -235,6 +273,8 @@ class WebDavStorageBackend(
             request(entry.path).apply {
                 entry.strongEtag()?.let { header("If-Match", it) }
             }.build(),
+            applyRequestDelay = false,
+            followContentRedirects = true,
         ).use { response ->
             if (response.body.byteStream().copyTo(output) != entry.size) {
                 throw StorageFailure(StorageFailure.Reason.PROTOCOL)
