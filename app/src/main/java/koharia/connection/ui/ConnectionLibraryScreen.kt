@@ -212,6 +212,9 @@ class ConnectionLibraryScreen(
                     onMangaClick = { navigator.push(it.toConnectionDetailsScreen()) },
                     onMangaLongClick = { navigator.push(it.toConnectionDetailsScreen()) },
                     onRefresh = model::refresh,
+                    // Entries come from an in-memory list, so there is never a paging load to
+                    // report: the aggregate screen renders its own loading state above.
+                    showPagingLoadingIndicator = false,
                 )
             }
         }

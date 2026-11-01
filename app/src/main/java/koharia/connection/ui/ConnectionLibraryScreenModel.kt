@@ -1,6 +1,7 @@
 package koharia.connection.ui
 
 import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import eu.kanade.domain.source.service.SourcePreferences
@@ -62,7 +63,7 @@ class ConnectionLibraryScreenModel(
 
     val pages: Flow<PagingData<StateFlow<Manga>>> = state.map { value ->
         PagingData.from(value.entries.map { MutableStateFlow(it.manga) as StateFlow<Manga> })
-    }.flowOn(Dispatchers.Default)
+    }.flowOn(Dispatchers.Default).cachedIn(screenModelScope)
 
     init {
         screenModelScope.launch {
@@ -133,6 +134,11 @@ class ConnectionLibraryScreenModel(
                 manualDownloadCounts.clear()
                 applyQuery(mutableState.value.query, genreQuery)
             } catch (error: CancellationException) {
+                // A cancelled refresh must not leave the screen pinned on the loading state:
+                // re-selecting the tab cancels and restarts this job, and nothing else clears it.
+                if (generation == refreshGeneration) {
+                    mutableState.update { it.copy(isLoading = false) }
+                }
                 throw error
             } catch (error: Throwable) {
                 if (generation == refreshGeneration) {
