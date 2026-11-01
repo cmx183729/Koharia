@@ -63,6 +63,7 @@ import koharia.domain.manga.model.toDomainManga
 import koharia.importing.IncomingMediaSessionLocator
 import koharia.media.LocalMediaFormats
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
@@ -77,7 +78,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
 import logcat.LogPriority
@@ -2718,12 +2721,43 @@ class LocalFolderSource(
         }
     }
 
-    private fun candidateResources(root: ResolvedLocalLibraryRoot, partial: Boolean = false): List<ScanCandidate> {
+    /** Bounds how many directory listings a single scan keeps in flight at once. */
+    private val scanListingPermits = Semaphore(SCAN_LISTING_CONCURRENCY)
+
+    private suspend fun candidateResources(
+        root: ResolvedLocalLibraryRoot,
+        partial: Boolean = false,
+    ): List<ScanCandidate> {
         val reader = LocalScanDirectoryReader(context, allowPendingRemote = partial)
         return when (preferences.getConfig().organizationMode(root.config)) {
             LocalLibraryOrganizationMode.FOLDER -> candidateFolderEntries(root, reader)
             LocalLibraryOrganizationMode.SERIES -> candidateSeriesDirectories(root, reader)
             LocalLibraryOrganizationMode.INDIVIDUAL_FILES -> candidateIndividualEntries(root, reader)
+        }
+    }
+
+    /**
+     * Warms the listings of sibling directories concurrently before the sequential walk descends
+     * into them. A listing is one blocking provider round trip per directory and it dominates a
+     * scan, so overlapping siblings is the only part of the walk that can use more than one
+     * thread. The walk itself stays sequential and ordered.
+     */
+    private suspend fun prefetchListings(directories: List<UniFile>, reader: LocalScanDirectoryReader) {
+        if (directories.size < 2) return
+        coroutineScope {
+            directories.forEach { directory ->
+                launch(Dispatchers.IO) {
+                    scanListingPermits.withPermit {
+                        try {
+                            reader.list(directory)
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (_: Exception) {
+                            // The walk reads this directory itself and reports the real failure.
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -2765,14 +2799,14 @@ class LocalFolderSource(
         )
     }
 
-    private fun candidateFolderEntries(
+    private suspend fun candidateFolderEntries(
         root: ResolvedLocalLibraryRoot,
         reader: LocalScanDirectoryReader,
     ): List<ScanCandidate> {
         val result = mutableListOf<ScanCandidate>()
         val visited = mutableSetOf<String>()
         val createMarkers = preferences.getConfig().metadataStorage == LocalMetadataStorage.FOLDER_DIRECTORY
-        fun visit(directory: UniFile, path: String) {
+        suspend fun visit(directory: UniFile, path: String) {
             check(visited.add(localDeletionIdentity(directory))) { "Cyclic local directory" }
             if (root.directory.uri.scheme == "file") {
                 val base = File(checkNotNull(root.directory.uri.path)).canonicalFile.toPath()
@@ -2865,24 +2899,25 @@ class LocalFolderSource(
                         reader.attributes,
                     )
                 }
-            children.filter {
+            val subdirectories = children.filter {
                 it.directory
             }
-                .forEach {
-                    visit(
-                        it.file,
-                        listOf(
-                            path,
-                            it.name,
-                        ).filter(String::isNotBlank).joinToString("/"),
-                    )
-                }
+            prefetchListings(subdirectories.map { it.file }, reader)
+            subdirectories.forEach {
+                visit(
+                    it.file,
+                    listOf(
+                        path,
+                        it.name,
+                    ).filter(String::isNotBlank).joinToString("/"),
+                )
+            }
         }
         visit(root.directory, "")
         return result
     }
 
-    private fun candidateSeriesDirectories(
+    private suspend fun candidateSeriesDirectories(
         root: ResolvedLocalLibraryRoot,
         reader: LocalScanDirectoryReader,
     ): List<ScanCandidate> {
@@ -2913,10 +2948,12 @@ class LocalFolderSource(
                 )
             }
         }.toMutableList()
-        result += rootEntries
-            .filter { it.directory && !it.name.startsWith('.') }
+        val seriesDirectories = rootEntries.filter { it.directory && !it.name.startsWith('.') }
+        prefetchListings(seriesDirectories.map { it.file }, reader)
+        result += seriesDirectories
             .map { directory ->
                 val files = reader.list(directory.file).filterNot { it.name.startsWith('.') }
+                prefetchListings(files.filter { it.directory }.map { it.file }, reader)
                 val chapters = files.filter { entry ->
                     if (entry.directory) {
                         reader.list(entry.file).any { child ->
@@ -2959,13 +2996,13 @@ class LocalFolderSource(
         return result
     }
 
-    private fun candidateIndividualEntries(
+    private suspend fun candidateIndividualEntries(
         root: ResolvedLocalLibraryRoot,
         reader: LocalScanDirectoryReader,
     ): List<ScanCandidate> {
         val entries = mutableListOf<ScanCandidate>()
         val visitedUris = mutableSetOf<String>()
-        fun visit(directory: UniFile, parentPath: String) {
+        suspend fun visit(directory: UniFile, parentPath: String) {
             if (!visitedUris.add(directory.uri.normalizeScheme().toString())) return
             val children = reader.list(directory).filterNot {
                 it.name.startsWith('.') || ".importing-" in it.name
@@ -3007,7 +3044,9 @@ class LocalFolderSource(
                     attributes = reader.attributes,
                 )
             }
-            children.filter { it.directory }.forEach { child ->
+            val subdirectories = children.filter { it.directory }
+            prefetchListings(subdirectories.map { it.file }, reader)
+            subdirectories.forEach { child ->
                 visit(child.file, listOf(parentPath, child.name).filter(String::isNotBlank).joinToString("/"))
             }
         }
@@ -3603,6 +3642,7 @@ class LocalFolderSource(
         private val COMIC_FILE_EXTENSIONS = SUPPORTED_FILE_EXTENSIONS - BOOK_FILE_EXTENSIONS
         private val IMPORT_INVALID_CHARACTERS = Regex("[\\\\/:*?\"<>|]")
         private const val SCAN_METADATA_BATCH_SIZE = 8
+        private const val SCAN_LISTING_CONCURRENCY = 8
     }
 
     private data class ScanCandidate(

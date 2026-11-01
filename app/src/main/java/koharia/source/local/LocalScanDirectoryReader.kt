@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import com.hippo.unifile.UniFile
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 
 internal data class LocalScanFile(
     val file: UniFile,
@@ -19,15 +20,24 @@ internal data class LocalScanFile(
 
 /** A scan-scoped snapshot; never reused after refresh or used for file mutations. */
 internal class LocalScanDirectoryReader(private val context: Context, private val allowPendingRemote: Boolean = false) {
-    val attributes = mutableMapOf<Uri, LocalScanFile>()
-    private val directories = mutableMapOf<Uri, List<LocalScanFile>>()
-    private val treeUris = mutableMapOf<Uri, Uri>()
+    // Directory listings are prefetched concurrently while the walk stays sequential, so every
+    // cache here has to tolerate concurrent readers and writers.
+    val attributes = ConcurrentHashMap<Uri, LocalScanFile>()
+    private val directories = ConcurrentHashMap<Uri, List<LocalScanFile>>()
+    private val treeUris = ConcurrentHashMap<Uri, Uri>()
 
-    fun metadata(file: UniFile): LocalScanFile = attributes.getOrPut(file.uri) {
+    fun metadata(file: UniFile): LocalScanFile = attributes.computeIfAbsent(file.uri) {
         LocalScanFile(file, file.name.orEmpty(), file.isDirectory, file.length(), file.lastModified())
     }
 
-    fun list(directory: UniFile): List<LocalScanFile> = directories.getOrPut(directory.uri) {
+    fun list(directory: UniFile): List<LocalScanFile> {
+        directories[directory.uri]?.let { return it }
+        val files = load(directory)
+        // A concurrent prefetch may have stored this directory first; its value is equivalent.
+        return directories.putIfAbsent(directory.uri, files) ?: files
+    }
+
+    private fun load(directory: UniFile): List<LocalScanFile> {
         val uri = directory.uri
         val treeUri = uri.takeIf { it.isSafTreeUri() } ?: treeUris[uri]
         if (treeUri == null && !metadata(directory).directory) {
@@ -36,7 +46,7 @@ internal class LocalScanDirectoryReader(private val context: Context, private va
         if (allowPendingRemote && directory is com.hippo.unifile.RemoteStorageFile &&
             directory.runtime.cachedChildren(directory.storagePath) == null
         ) {
-            return@getOrPut emptyList()
+            return emptyList()
         }
         val files = if (directory is com.hippo.unifile.RemoteStorageFile) {
             directory.runtime.cachedChildren(directory.storagePath)
@@ -56,7 +66,7 @@ internal class LocalScanDirectoryReader(private val context: Context, private va
             directory.listFiles()?.map(::metadata) ?: throw IOException("Unable to list local directory")
         }
         files.forEach { attributes[it.file.uri] = it }
-        files
+        return files
     }
 
     internal fun isDirectoryEntry(
