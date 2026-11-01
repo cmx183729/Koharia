@@ -11,6 +11,7 @@ import androidx.viewpager.widget.DirectionalViewPager
 import eu.kanade.tachiyomi.ui.reader.transition.PageTurnSensitivity
 import eu.kanade.tachiyomi.ui.reader.transition.PageTurnSwipeHandler
 import eu.kanade.tachiyomi.ui.reader.viewer.GestureDetectorWithLongTap
+import eu.kanade.tachiyomi.ui.reader.viewer.ReaderPageImageView
 import kotlin.math.abs
 
 /**
@@ -127,6 +128,9 @@ open class Pager(
      * Dispatches a touch event.
      */
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        // Pages revealed by a swipe never see that gesture, so the auto landscape zoom relies on
+        // this shared signal to stay off while the reader is being touched.
+        ReaderPageImageView.noteReaderTouch()
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
             touchOwner = if (isTouchNavigationEnabled) TouchOwner.PAGE else TouchOwner.QUEUE
             // No double-tap zoom means there is no reason to delay single-tap navigation.

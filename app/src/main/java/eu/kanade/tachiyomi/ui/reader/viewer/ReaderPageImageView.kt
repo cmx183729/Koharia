@@ -7,6 +7,7 @@ import android.graphics.RectF
 import android.graphics.drawable.Animatable
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.os.SystemClock
 import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -69,6 +70,46 @@ open class ReaderPageImageView @JvmOverloads constructor(
 
     private val alwaysDecodeLongStripWithSSIV by lazy {
         basePreferences.alwaysDecodeLongStripWithSSIV.get()
+    }
+
+    companion object {
+        /** Delay before a landscape page is zoomed to fill the screen. */
+        private const val LANDSCAPE_ZOOM_DELAY_MS = 500L
+
+        /**
+         * Uptime of the last touch seen anywhere in the pager. The pager consumes swipe events
+         * before they reach the page view, and a page revealed by a swipe is a different instance
+         * that never receives that gesture, so the signal has to be shared instead of per-view.
+         */
+        @Volatile
+        private var lastReaderTouchUptime = 0L
+
+        /** Records touch activity so an automatic zoom cannot fire under or right after a gesture. */
+        internal fun noteReaderTouch() {
+            lastReaderTouchUptime = SystemClock.uptimeMillis()
+        }
+
+        private fun readerTouchQuietFor(durationMs: Long): Boolean =
+            SystemClock.uptimeMillis() - lastReaderTouchUptime >= durationMs
+    }
+
+    private var touchInProgress = false
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        noteReaderTouch()
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                touchInProgress = true
+                cancelLandscapeZoom()
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (touchInProgress) cancelLandscapeZoom()
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                touchInProgress = false
+            }
+        }
+        return super.dispatchTouchEvent(ev)
     }
 
     private var pageView: View? = null
@@ -183,6 +224,12 @@ open class ReaderPageImageView @JvmOverloads constructor(
                 if (pageView !== this || !isAttachedToWindow || !isReady || !isVisible || scale != minScale) {
                     return@Runnable
                 }
+                // A page revealed mid-swipe must not zoom itself: the finger may already be up by
+                // the time this runs, so the quiet period covers the whole gesture, not just the
+                // instant it fires.
+                if (touchInProgress || !readerTouchQuietFor(LANDSCAPE_ZOOM_DELAY_MS)) {
+                    return@Runnable
+                }
                 val point = when (imageConfig.zoomStartPosition) {
                     ZoomStartPosition.LEFT -> if (forward) PointF(0F, 0F) else PointF(sWidth.toFloat(), 0F)
                     ZoomStartPosition.RIGHT -> if (forward) PointF(sWidth.toFloat(), 0F) else PointF(0F, 0F)
@@ -197,7 +244,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
                     ?.start()
             }
             pendingLandscapeZoom = zoom
-            this@ReaderPageImageView.postDelayed(zoom, 500)
+            this@ReaderPageImageView.postDelayed(zoom, LANDSCAPE_ZOOM_DELAY_MS)
         }
     }
 
