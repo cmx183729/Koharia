@@ -3172,6 +3172,8 @@ class LocalFolderSource(
         val candidateCountsByRoot = mutableMapOf<String, Int>()
         val previewUrls = existingByUrl.keys.toMutableSet()
         var lastPreview = 0L
+        var previewInterval = SCAN_PREVIEW_INTERVAL_MS
+        var lastPreviewPaths: List<String>? = null
         val candidates = buildList {
             config.roots.forEach { root ->
                 try {
@@ -3187,49 +3189,61 @@ class LocalFolderSource(
                             forceFull = !incrementalScan,
                             onDirectory = {
                                 val now = android.os.SystemClock.elapsedRealtime()
-                                if (now - lastPreview >= 500) {
+                                if (now - lastPreview >= previewInterval) {
                                     val directory = preferences.resolveRoot(context, root)
                                     if (directory != null) {
                                         val preview = candidateResources(
                                             ResolvedLocalLibraryRoot(root, directory),
                                             partial = true,
                                         )
-                                        val staged = buildIndex(
-                                            preview,
-                                            preferences.getIndex(),
-                                            previousIndex.scannedAt,
-                                            configuredRootIds,
-                                            emptySet(),
-                                        )
-                                        preferences.setIndex(staged.copy(titlePurgeRegex = config.titlePurgeRegex))
-                                        val additions = preview.mapNotNull { candidate ->
-                                            val item =
-                                                staged.itemsByLocation[candidate.root.id to candidate.relativePath]
-                                                    ?: return@mapNotNull null
-                                            val url = LocalLibraryLocator.entryUrl(id, item.rootId, item.locatorPath)
-                                            if (!previewUrls.add(url)) return@mapNotNull null
-                                            SManga.create().apply {
-                                                this.url = url
-                                                title =
-                                                    scanFallbackTitle(
-                                                        candidate.relativePath,
-                                                        candidate.resource.isDirectory,
-                                                    )
-                                                thumbnail_url = url
-                                                initialized = false
-                                            }.toDomainManga(id).copy(chapterFlags = defaultChapterFlags)
-                                        }
-                                        if (additions.isNotEmpty()) {
-                                            mangaRepository.insertNetworkManga(additions)
-                                            mutableLibraryRefreshes.emit(
-                                                ConnectionLibraryRefreshResult(
-                                                    staged.items.size,
-                                                    System.currentTimeMillis(),
-                                                ),
+                                        // Staging rewrites the whole index, so it dominates the cost of a
+                                        // network scan. Skip it while the visible set has not moved.
+                                        val previewPaths = preview.map { it.relativePath }
+                                        if (previewPaths != lastPreviewPaths) {
+                                            lastPreviewPaths = previewPaths
+                                            val staged = buildIndex(
+                                                preview,
+                                                preferences.getIndex(),
+                                                previousIndex.scannedAt,
+                                                configuredRootIds,
+                                                emptySet(),
                                             )
+                                            preferences.setIndex(staged.copy(titlePurgeRegex = config.titlePurgeRegex))
+                                            val additions = preview.mapNotNull { candidate ->
+                                                val item =
+                                                    staged.itemsByLocation[candidate.root.id to candidate.relativePath]
+                                                        ?: return@mapNotNull null
+                                                val url = LocalLibraryLocator.entryUrl(
+                                                    id,
+                                                    item.rootId,
+                                                    item.locatorPath,
+                                                )
+                                                if (!previewUrls.add(url)) return@mapNotNull null
+                                                SManga.create().apply {
+                                                    this.url = url
+                                                    title =
+                                                        scanFallbackTitle(
+                                                            candidate.relativePath,
+                                                            candidate.resource.isDirectory,
+                                                        )
+                                                    thumbnail_url = url
+                                                    initialized = false
+                                                }.toDomainManga(id).copy(chapterFlags = defaultChapterFlags)
+                                            }
+                                            if (additions.isNotEmpty()) {
+                                                mangaRepository.insertNetworkManga(additions)
+                                                mutableLibraryRefreshes.emit(
+                                                    ConnectionLibraryRefreshResult(
+                                                        staged.items.size,
+                                                        System.currentTimeMillis(),
+                                                    ),
+                                                )
+                                            }
                                         }
                                     }
                                     lastPreview = now
+                                    previewInterval =
+                                        (previewInterval * 2).coerceAtMost(SCAN_PREVIEW_MAX_INTERVAL_MS)
                                 }
                             },
                         )
@@ -3659,6 +3673,8 @@ class LocalFolderSource(
         private val IMPORT_INVALID_CHARACTERS = Regex("[\\\\/:*?\"<>|]")
         private const val SCAN_METADATA_BATCH_SIZE = 8
         private const val SCAN_LISTING_CONCURRENCY = 8
+        private const val SCAN_PREVIEW_INTERVAL_MS = 500L
+        private const val SCAN_PREVIEW_MAX_INTERVAL_MS = 4_000L
     }
 
     private data class ScanCandidate(
