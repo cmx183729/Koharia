@@ -38,6 +38,7 @@ import tachiyomi.domain.storage.service.StorageManager
 import tachiyomi.domain.storage.service.StoragePreferences
 import java.io.IOException
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.writeBytes
@@ -190,7 +191,21 @@ class CustomCoverStoreTest {
         every { preference.changes() } returns rootChanges
         coEvery { mangaRepository.getFavorites() } returns emptyList()
         coEvery { mangaRepository.getMangaBySourceId(any()) } returns emptyList()
-        val emptySourceManager = mockk<SourceManager>(relaxed = true)
+        // A mock cannot stand in for this interface: `catalogueSources` and `getCatalogueSources()`
+        // share a JVM name, so mockk answers one with the other's value. Count the calls instead.
+        val catalogueQueries = AtomicInteger()
+        val emptySourceManager = object : SourceManager {
+            override val isInitialized: StateFlow<Boolean> = MutableStateFlow(true)
+            override val catalogueSources: Flow<List<CatalogueSource>> = MutableStateFlow(emptyList())
+            override fun get(sourceKey: Long): Source? = null
+            override fun getOrStub(sourceKey: Long): Source = error("no stub for $sourceKey")
+            override fun getOnlineSources(): List<HttpSource> = emptyList()
+            override fun getCatalogueSources(): List<CatalogueSource> {
+                catalogueQueries.incrementAndGet()
+                return emptyList()
+            }
+            override fun getStubSources(): List<StubSource> = emptyList()
+        }
         val isolatedStore = CustomCoverStore(
             context,
             storageManager,
@@ -206,7 +221,7 @@ class CustomCoverStoreTest {
             rootChanges.value = "new-root"
             withTimeout(5_000) { isolatedStore.changes.first() }
             assertEquals(1L, isolatedStore.changes.value)
-            verify(exactly = 1) { emptySourceManager.getCatalogueSources() }
+            assertEquals(1, catalogueQueries.get())
         } finally {
             scope.cancel()
         }
