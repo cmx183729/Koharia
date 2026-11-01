@@ -2365,7 +2365,7 @@ class LocalFolderSource(
     ) {
         val file = resource.file
         clearComicMetadata(manga)
-        manga.title = if (file.isDirectory) file.name.orEmpty() else file.nameWithoutExtension.orEmpty()
+        manga.title = purgedTitle(if (file.isDirectory) file.name.orEmpty() else file.nameWithoutExtension.orEmpty())
         manga.thumbnail_url = if (file.isDirectory) {
             findCover(scannedFiles ?: file.listFiles().orEmpty().toList())?.uri?.toString()
                 ?: LocalLibraryLocator.chapterUrl(
@@ -2438,7 +2438,7 @@ class LocalFolderSource(
         itemKey: String? = null,
     ) {
         clearComicMetadata(manga)
-        manga.title = directory.name.orEmpty()
+        manga.title = purgedTitle(directory.name.orEmpty())
         manga.thumbnail_url = findCover(files)?.uri?.toString()
             ?: findFirstChapter(files)?.let { chapter ->
                 val chapterPath = listOf(relativePath, chapter.name.orEmpty())
@@ -2543,11 +2543,18 @@ class LocalFolderSource(
         manga.status = SManga.UNKNOWN
     }
 
+    /**
+     * Applies the library's title purge pattern to a name derived from disk. Titles the user set
+     * explicitly never reach this: those come from the metadata override path.
+     */
+    private fun purgedTitle(raw: String): String =
+        purgeLocalTitle(raw, preferences.getConfig().titlePurgeRegex)
+
     private fun applyFolderDisplay(manga: SManga, item: LocalLibraryItem) {
         clearComicMetadata(manga)
         val settings = preferences.folderDisplaySettings(item.itemKey)
         manga.title = settings.displayName?.takeIf(String::isNotBlank)
-            ?: item.relativePath.substringAfterLast('/')
+            ?: purgedTitle(item.relativePath.substringAfterLast('/'))
         manga.author = settings.author?.takeIf(String::isNotBlank)
         manga.description = settings.description
         manga.genre = settings.tags.takeIf(List<String>::isNotEmpty)?.joinToString(", ")
@@ -3191,7 +3198,7 @@ class LocalFolderSource(
                                             configuredRootIds,
                                             emptySet(),
                                         )
-                                        preferences.setIndex(staged)
+                                        preferences.setIndex(staged.copy(titlePurgeRegex = config.titlePurgeRegex))
                                         val additions = preview.mapNotNull { candidate ->
                                             val item =
                                                 staged.itemsByLocation[candidate.root.id to candidate.relativePath]
@@ -3268,6 +3275,10 @@ class LocalFolderSource(
             }
             .associateBy { it.itemKey }
 
+        // A changed purge pattern has to invalidate the incremental path, otherwise every stored
+        // title keeps the name the previous pattern produced.
+        val titleRulesChanged = previousIndex.titlePurgeRegex != config.titlePurgeRegex
+
         val changedManga = candidates.chunked(SCAN_METADATA_BATCH_SIZE).flatMap { batch ->
             coroutineScope {
                 batch.map { candidate ->
@@ -3278,7 +3289,7 @@ class LocalFolderSource(
                             val url = LocalLibraryLocator.entryUrl(id, candidate.root.id, scannedItem.locatorPath)
                             val existing = existingByUrl[url]
                             val itemKey = scannedItem.itemKey
-                            val unchanged = incrementalScan && previousIndex.schemaVersion >= 7 &&
+                            val unchanged = !titleRulesChanged && incrementalScan && previousIndex.schemaVersion >= 7 &&
                                 existing?.initialized == true &&
                                 previousEntriesByKey[itemKey]?.fingerprint == scannedItem.fingerprint
                             if (unchanged &&
@@ -3290,7 +3301,9 @@ class LocalFolderSource(
 
                             (existing?.toSManga()?.takeIf { unchanged } ?: SManga.create()).apply {
                                 if (!unchanged) {
-                                    title = scanFallbackTitle(candidate.relativePath, candidate.resource.isDirectory)
+                                    title = purgedTitle(
+                                        scanFallbackTitle(candidate.relativePath, candidate.resource.isDirectory),
+                                    )
                                 }
                                 this.url = url
                                 val metadataRole = scannedItem.metadataRole(config.organizationMode(candidate.root))
@@ -3392,7 +3405,7 @@ class LocalFolderSource(
             }
             mangaRepository.insertNetworkManga(changedManga)
         }
-        preferences.setIndex(refreshedIndex)
+        preferences.setIndex(refreshedIndex.copy(titlePurgeRegex = config.titlePurgeRegex))
         if (failedRoots.isNotEmpty()) {
             throw LocalLibraryPartialScanException(
                 failedRootIds = failedRoots.mapTo(mutableSetOf(), LocalLibraryRootConfig::id),

@@ -258,9 +258,13 @@ class LocalFolderSettingsScreen(
                 source.startLibraryRefresh()
             }
         }
+        fun titlePurgeInvalid(): Boolean {
+            val pattern = config.titlePurgeRegex
+            return pattern.isNotBlank() && runCatching { Regex(pattern) }.isFailure
+        }
         fun save() {
             if (isSaving || !defaultModesChosen || connectionName.isBlank() ||
-                !validShelves || (remoteMode && !effectiveNetwork.valid)
+                !validShelves || (remoteMode && !effectiveNetwork.valid) || titlePurgeInvalid()
             ) {
                 return
             }
@@ -977,6 +981,33 @@ class LocalFolderSettingsScreen(
                                 title = stringResource(MR.strings.local_library_metadata_storage),
                                 subtitle = metadataLabel(context, config.metadataStorage),
                                 enabled = canChangeMetadataStorage(config.setupCompleted),
+                            )
+                        }
+                        item {
+                            val pattern = config.titlePurgeRegex
+                            val patternInvalid = pattern.isNotBlank() && runCatching { Regex(pattern) }.isFailure
+                            OutlinedTextField(
+                                value = pattern,
+                                onValueChange = { config = config.copy(titlePurgeRegex = it) },
+                                label = { Text(stringResource(MR.strings.local_library_title_purge)) },
+                                placeholder = {
+                                    Text(stringResource(MR.strings.local_library_title_purge_placeholder))
+                                },
+                                singleLine = true,
+                                enabled = !isSaving,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                                isError = patternInvalid,
+                                supportingText = {
+                                    Text(
+                                        stringResource(
+                                            if (patternInvalid) {
+                                                MR.strings.local_library_title_purge_invalid
+                                            } else {
+                                                MR.strings.local_library_title_purge_summary
+                                            },
+                                        ),
+                                    )
+                                },
                             )
                         }
                     } else if (setupStep == LocalLibrarySetupStep.LIBRARIES) {

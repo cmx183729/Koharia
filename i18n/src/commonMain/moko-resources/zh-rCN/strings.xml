@@ -1610,6 +1610,10 @@
     <string name="local_library_content_type">内容类型</string>
     <string name="local_library_layout">目录布局</string>
     <string name="local_library_metadata_storage">元数据保存位置</string>
+    <string name="local_library_title_purge">漫画名净化正则</string>
+    <string name="local_library_title_purge_summary">可选的正则表达式，会从 Koharia 依据文件名或文件夹名得到的每个标题中删除匹配部分。手动编辑过的标题不会被改动。</string>
+    <string name="local_library_title_purge_invalid">这个正则无法编译，请修正后再保存。</string>
+    <string name="local_library_title_purge_placeholder">例如 ^\\[[^\\]]*\\]\\s*</string>
     <string name="local_library_saved">本地库设置已保存</string>
     <string name="local_library_content_comics">漫画</string>
     <string name="local_library_content_books">书籍</string>

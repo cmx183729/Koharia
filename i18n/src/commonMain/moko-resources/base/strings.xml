@@ -1748,6 +1748,10 @@
     <string name="local_library_content_type">Content type</string>
     <string name="local_library_layout">Directory layout</string>
     <string name="local_library_metadata_storage">Metadata storage</string>
+    <string name="local_library_title_purge">Title cleanup pattern</string>
+    <string name="local_library_title_purge_summary">Optional regular expression removed from every title Koharia takes from a file or folder name. Titles you edited by hand are never changed.</string>
+    <string name="local_library_title_purge_invalid">This regular expression cannot be compiled. Fix it before saving.</string>
+    <string name="local_library_title_purge_placeholder">e.g. ^\\[[^\\]]*\\]\\s*</string>
     <string name="local_library_saved">Local library settings saved</string>
     <string name="local_library_content_comics">Comics</string>
     <string name="local_library_content_books">Books</string>

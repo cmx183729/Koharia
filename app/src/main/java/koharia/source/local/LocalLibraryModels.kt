@@ -91,6 +91,11 @@ data class LocalLibraryConfig(
     val managedBaseTreeUri: String = "",
     val managedBaseDisplayPath: String = "",
     val metadataStorage: LocalMetadataStorage = LocalMetadataStorage.DATABASE,
+    /**
+     * Optional pattern stripped from every title that Koharia derives from a file or folder name.
+     * Stored per library so one shelf can drop a release-group prefix without touching another.
+     */
+    val titlePurgeRegex: String = "",
     val libraryId: String = "",
     @EncodeDefault val setupCompleted: Boolean = false,
     val schemaVersion: Int = 7,
@@ -201,6 +206,12 @@ data class LocalLibraryIndex(
     val scannedAt: Long = 0L,
     val items: List<LocalLibraryItem> = emptyList(),
     val pendingChapterRefreshItemKeys: Set<String> = emptySet(),
+    /**
+     * The title purge pattern that produced the stored titles. A scan that finds a different
+     * pattern here has to rebuild every title, because the incremental path otherwise keeps the
+     * old one forever.
+     */
+    val titlePurgeRegex: String = "",
 ) {
     val itemsByKey: Map<String, LocalLibraryItem> by lazy { items.associateBy(LocalLibraryItem::itemKey) }
 
