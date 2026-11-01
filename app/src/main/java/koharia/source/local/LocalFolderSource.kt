@@ -3328,8 +3328,12 @@ class LocalFolderSource(
             }
         }
         // An entry whose images are all empty would only import as a manga with no readable page.
+        // Remote providers are exempt: they report no size for a file they have not materialised,
+        // so a zero there means unknown and dropping the entry would empty the whole shelf.
         val candidates = if (config.skipEmptyEntries) {
-            val (emptyEntries, readableEntries) = rawCandidates.partition { it.empty }
+            val (emptyEntries, readableEntries) = rawCandidates.partition {
+                it.empty && it.resource !is com.hippo.unifile.RemoteStorageFile
+            }
             if (emptyEntries.isNotEmpty()) {
                 logcat {
                     "Skipping ${emptyEntries.size} empty local library entries"
