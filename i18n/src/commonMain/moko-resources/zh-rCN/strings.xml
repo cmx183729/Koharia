@@ -109,8 +109,17 @@
     <string name="pref_connection_management">库连接管理</string>
     <string name="connection_unavailable">不可用</string>
     <string name="connection_library_refresh_failed">无法刷新合并书库，当前显示的是已保存的内容。</string>
+    <string name="connection_library_all_comics">全部漫画</string>
+    <string name="connection_library_manga_servers">漫画服务器</string>
     <string name="connection_library_all_connections">全部连接</string>
     <string name="connection_library_filter_owner">连接</string>
+    <string name="connection_library_filter_kind">书库类型</string>
+    <string name="connection_library_all_kinds">全部书库类型</string>
+    <string name="connection_library_kind_local">本地存储</string>
+    <string name="connection_library_kind_webdav">WebDAV 存储</string>
+    <string name="connection_library_kind_smb">SMB 存储</string>
+    <string name="connection_library_kind_server">服务器</string>
+    <string name="connection_library_kind_unknown">未知</string>
     <string name="connection_library_filter_favorites">仅收藏</string>
     <string name="connection_library_filter_completed">仅显示已完结</string>
     <string name="connection_library_filter_downloaded">仅显示本机已下载</string>

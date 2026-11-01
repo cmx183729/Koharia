@@ -24,6 +24,7 @@ class LanraragiPreferences(
     val internalAddress: String get() = preferences.getString("internal_address", "").orEmpty()
     val apiKey: String get() = preferences.getString(Preference.privateKey("api_key"), "").orEmpty()
     val indexedAddress: String get() = preferences.getString(Preference.appStateKey("indexed_address"), "").orEmpty()
+    val indexedIdentity: String get() = preferences.getString(Preference.appStateKey("indexed_identity"), "").orEmpty()
     val defaultCategory: String get() = preferences.getString("default_category", "").orEmpty()
     val groupCollections: Boolean get() = preferences.getBoolean("group_collections", true)
     val archiveOpenMode: LanraragiArchiveOpenMode get() = LanraragiArchiveOpenMode.entries
@@ -64,7 +65,14 @@ class LanraragiPreferences(
             .apply()
     }
     fun markIndexed(address: String) {
-        preferences.edit().putString(Preference.appStateKey("indexed_address"), address).apply()
+        markIndexed(address, lanraragiCatalogIdentity(address, internalAddress, apiKey))
+    }
+
+    fun markIndexed(address: String, identity: String) {
+        preferences.edit()
+            .putString(Preference.appStateKey("indexed_address"), address)
+            .putString(Preference.appStateKey("indexed_identity"), identity)
+            .apply()
     }
     fun save(
         address: String,

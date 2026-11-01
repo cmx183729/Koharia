@@ -4,6 +4,8 @@ import kotlinx.coroutines.flow.Flow
 
 data class StorageRecord(val key: String, val payload: String, val revision: Long)
 
+data class StorageRecordBatchEntry(val namespace: String, val record: StorageRecord)
+
 /** A null expected record permits insertion only while the key remains absent. */
 data class StorageRecordUpdate(val namespace: String, val expected: StorageRecord?, val updated: StorageRecord)
 
@@ -46,6 +48,15 @@ interface LibraryStorageRepository {
         record: StorageRecord,
         checkActive: () -> Unit = {},
     )
+
+    suspend fun putBatch(
+        connection: Long,
+        account: String,
+        root: String,
+        entries: List<StorageRecordBatchEntry>,
+        checkActive: () -> Unit = {},
+    )
+
     suspend fun replaceIfUnchanged(
         connection: Long,
         account: String,

@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AdaptiveSheet
+import koharia.connection.ConnectionLibraryKind
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.CheckboxItem
 import tachiyomi.presentation.core.components.SelectItem
@@ -25,6 +26,7 @@ import tachiyomi.presentation.core.i18n.stringResource
 @Composable
 internal fun ConnectionLibraryAllFilterSheet(
     owners: List<Pair<Long, String>>,
+    libraryKinds: List<ConnectionLibraryKind>,
     sortOptions: List<Pair<ConnectionLibrarySort, String>>,
     filters: ConnectionLibraryFilters,
     onDismiss: () -> Unit,
@@ -35,6 +37,18 @@ internal fun ConnectionLibraryAllFilterSheet(
         null to stringResource(MR.strings.connection_library_all_connections),
     ) + owners.map { (id, label) -> id to label }
     val ownerIndex = ownerChoices.indexOfFirst { it.first == draft.ownerSourceId }.coerceAtLeast(0)
+    val kindChoices = listOf<ConnectionLibraryKind?>(null) + libraryKinds
+    val kindLabels = kindChoices.map { kind ->
+        when (kind) {
+            null -> stringResource(MR.strings.connection_library_all_kinds)
+            ConnectionLibraryKind.LOCAL -> stringResource(MR.strings.connection_library_kind_local)
+            ConnectionLibraryKind.WEBDAV -> stringResource(MR.strings.connection_library_kind_webdav)
+            ConnectionLibraryKind.SMB -> stringResource(MR.strings.connection_library_kind_smb)
+            ConnectionLibraryKind.SERVER -> stringResource(MR.strings.connection_library_kind_server)
+            ConnectionLibraryKind.UNKNOWN -> stringResource(MR.strings.connection_library_kind_unknown)
+        }
+    }
+    val kindIndex = kindChoices.indexOfFirst { it == draft.libraryKind }.coerceAtLeast(0)
     val sortIndex = sortOptions.indexOfFirst { it.first == draft.sort }.coerceAtLeast(0)
 
     AdaptiveSheet(onDismissRequest = onDismiss) {
@@ -44,6 +58,11 @@ internal fun ConnectionLibraryAllFilterSheet(
                 ownerChoices.map { it.second }.toTypedArray(),
                 ownerIndex,
             ) { draft = draft.copy(ownerSourceId = ownerChoices[it].first) }
+            SelectItem(
+                stringResource(MR.strings.connection_library_filter_kind),
+                kindLabels.toTypedArray(),
+                kindIndex,
+            ) { draft = draft.copy(libraryKind = kindChoices[it]) }
             CheckboxItem(stringResource(MR.strings.connection_library_filter_favorites), draft.favoritesOnly) {
                 draft = draft.copy(favoritesOnly = !draft.favoritesOnly)
             }

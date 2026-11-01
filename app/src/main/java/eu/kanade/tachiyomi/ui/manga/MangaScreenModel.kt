@@ -45,7 +45,6 @@ import eu.kanade.tachiyomi.util.removeCovers
 import eu.kanade.tachiyomi.util.system.toast
 import koharia.connection.ChapterFetchOrigin
 import koharia.connection.ConnectionEpubProgressAdapter
-import koharia.connection.ConnectionLibraryMembershipAdapter
 import koharia.connection.ConnectionLibraryShelf
 import koharia.connection.ConnectionLibraryShelfAdapter
 import koharia.connection.ConnectionLocalFileAdapter
@@ -57,6 +56,7 @@ import koharia.connection.ConnectionReadStatus
 import koharia.connection.ConnectionViewerSettingsAdapter
 import koharia.connection.SharedAppPreferences
 import koharia.connection.fetchChapters
+import koharia.connection.getProviderManagedLibraryEntries
 import koharia.connection.ui.readStatusMessages
 import koharia.domain.epub.interactor.GetEpubProgress
 import koharia.domain.epub.interactor.GetEpubRemoteProgressCache
@@ -1354,12 +1354,7 @@ class MangaScreenModel(
                 ChapterDisplayOption.HIDE_MISSING.get(manga.chapterFlags, libraryPreferences.hideMissingChapters.get()),
             )
             if (applyToExisting) {
-                val managedEntries = Injekt.get<SourceManager>().getCatalogueSources()
-                    .filter { it.mangaBehavior().providerManagedLibrary }
-                    .flatMap { source ->
-                        val entries = mangaRepository.getMangaBySourceId(source.id)
-                        (source as? ConnectionLibraryMembershipAdapter)?.filterLibraryEntries(entries) ?: entries
-                    }
+                val managedEntries = mangaRepository.getProviderManagedLibraryEntries(Injekt.get<SourceManager>())
                 setMangaDefaultChapterFlags.awaitAll(managedEntries)
             }
             screenModelScope.launch {

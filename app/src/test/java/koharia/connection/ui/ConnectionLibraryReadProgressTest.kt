@@ -4,6 +4,7 @@ import koharia.connection.ConnectionLibraryEntry
 import koharia.connection.ConnectionLibraryEntryKey
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.library.model.LibraryManga
 import tachiyomi.domain.manga.model.Manga
 
@@ -30,6 +31,31 @@ class ConnectionLibraryReadProgressTest {
     }
 
     @Test
+    fun `managed entries derive progress from persisted chapters`() {
+        val entry = ConnectionLibraryEntry(Manga.create().copy(id = 8L, source = 41L))
+        val chapters = listOf(
+            chapter(8L, 1L, read = true),
+            chapter(8L, 2L, read = false),
+        )
+
+        val progress = connectionLibraryReadProgress(listOf(entry), mapOf(8L to chapters))
+
+        assertEquals(1L to 2L, progress[entry.key]?.let { it.readCount to it.totalChapterCount })
+    }
+
+    @Test
+    fun `chapter progress does not collapse owners sharing a manga id`() {
+        val first = ConnectionLibraryEntry(Manga.create().copy(id = 9L, source = 41L))
+        val second = ConnectionLibraryEntry(Manga.create().copy(id = 9L, source = 42L))
+        val chapters = listOf(chapter(9L, 1L, read = true))
+
+        val progress = connectionLibraryReadProgress(listOf(first, second), mapOf(9L to chapters))
+
+        assertEquals(null, progress[first.key])
+        assertEquals(null, progress[second.key])
+    }
+
+    @Test
     fun `progress remains isolated when owners share a manga id`() {
         val first = libraryEntry(source = 41L, id = 7L, total = 10, read = 3)
         val second = libraryEntry(source = 42L, id = 7L, total = 20, read = 15)
@@ -51,6 +77,12 @@ class ConnectionLibraryReadProgressTest {
             },
         )
     }
+
+    private fun chapter(mangaId: Long, id: Long, read: Boolean): Chapter = Chapter.create().copy(
+        id = id,
+        mangaId = mangaId,
+        read = read,
+    )
 
     private fun libraryEntry(source: Long, id: Long, total: Long, read: Long): ConnectionLibraryEntry {
         val manga = Manga.create().copy(id = id, source = source)

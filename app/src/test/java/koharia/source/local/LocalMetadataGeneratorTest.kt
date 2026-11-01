@@ -19,17 +19,37 @@ class LocalMetadataGeneratorTest {
 
     @Test
     fun `ametadata maps to local metadata suggestion fields`() {
-        val metadata = ArchiveMetadata(
-            title = "Gallery title",
-            authors = listOf("artist:name"),
-            genres = listOf("Manga"),
-            tags = listOf("language:Chinese"),
-        ).toLocalEmbeddedMetadata()
+        try {
+            koharia.source.ehentai.EHenTagTranslation.replace(
+                mapOf("language: chinese" to "语言: 中文"),
+            )
+            val metadata = ArchiveMetadata(
+                title = "Gallery title",
+                authors = listOf("artist:name"),
+                genres = listOf("Manga"),
+                tags = listOf("language:Chinese"),
+            ).toLocalEmbeddedMetadata()
 
-        assertEquals("Gallery title", metadata.title)
-        assertEquals(listOf("artist:name"), metadata.authors)
-        assertEquals(listOf("Manga", "language:Chinese"), metadata.subjects)
-        assertEquals(MetadataSuggestionSource.JHENTAI_AMETADATA, metadata.source)
+            assertEquals("Gallery title", metadata.title)
+            assertEquals(listOf("语言: 中文", "Manga"), metadata.subjects)
+            assertEquals(listOf("artist:name"), metadata.authors)
+            assertEquals(MetadataSuggestionSource.JHENTAI_AMETADATA, metadata.source)
+        } finally {
+            koharia.source.ehentai.EHenTagTranslation.replace(emptyMap())
+        }
+    }
+
+    @Test
+    fun `ametadata tag translation does not affect filename-only metadata`() {
+        try {
+            koharia.source.ehentai.EHenTagTranslation.replace(
+                mapOf("language: chinese" to "语言: 中文"),
+            )
+            val metadata = LocalEmbeddedMetadata(subjects = listOf("language:Chinese"))
+            assertEquals(listOf("language:Chinese"), metadata.subjects)
+        } finally {
+            koharia.source.ehentai.EHenTagTranslation.replace(emptyMap())
+        }
     }
 
     @Test

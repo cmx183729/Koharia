@@ -320,3 +320,4 @@ private fun buildMemo(
 
 const val KOMGA_LIBRARY_ID_MEMO_KEY = "komgaLibraryId"
 const val KOMGA_LIBRARY_IDS_MEMO_KEY = "komgaLibraryIds"
+const val KOMGA_LIBRARY_NAMESPACE_MEMO_KEY = "komgaLibraryNamespace"

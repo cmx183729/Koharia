@@ -39,6 +39,7 @@ import koharia.domain.manga.model.toDomainManga
 import koharia.epub.cache.EpubCacheManager
 import koharia.komga.api.dto.KOMGA_LIBRARY_IDS_MEMO_KEY
 import koharia.komga.api.dto.KOMGA_LIBRARY_ID_MEMO_KEY
+import koharia.komga.api.dto.KOMGA_LIBRARY_NAMESPACE_MEMO_KEY
 import koharia.komga.api.dto.KomgaOfflineAuthor
 import koharia.komga.api.dto.KomgaOfflineFilterMetadata
 import koharia.komga.api.dto.LibraryDto
@@ -352,12 +353,19 @@ class KomgaLibraryScreenModel(
         val komgaSource = source as? KomgaSource ?: return this
         val updates = mutableListOf<MangaUpdate>()
         val enriched = map { manga ->
-            if (manga.cachedLibraryIds.isNotEmpty()) return@map manga
+            val currentNamespace = komgaSource.shelfCacheNamespace()
+            if (
+                manga.cachedLibraryIds.isNotEmpty() &&
+                manga.memo[KOMGA_LIBRARY_NAMESPACE_MEMO_KEY]?.jsonPrimitive?.contentOrNull == currentNamespace
+            ) {
+                return@map manga
+            }
 
             val libraryIds = manga.resolveCachedLibraryIds(komgaSource, chaptersFor)
             if (libraryIds.isEmpty()) return@map manga
             val updatedMemo = JsonObject(
                 manga.memo +
+                    (KOMGA_LIBRARY_NAMESPACE_MEMO_KEY to JsonPrimitive(komgaSource.shelfCacheNamespace())) +
                     (KOMGA_LIBRARY_IDS_MEMO_KEY to JsonArray(libraryIds.map(::JsonPrimitive))) +
                     if (libraryIds.size == 1) {
                         mapOf(KOMGA_LIBRARY_ID_MEMO_KEY to JsonPrimitive(libraryIds.single()))

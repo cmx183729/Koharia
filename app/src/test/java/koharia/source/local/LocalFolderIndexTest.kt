@@ -283,6 +283,16 @@ class LocalFolderIndexTest {
     }
 
     @Test
+    fun `series chapter candidates exclude auxiliary files`() {
+        val supported = setOf("cbz", "epub")
+        assertTrue(isLocalSeriesChapterFile("001.cbz", "cbz", supported) { false })
+        assertTrue(isLocalSeriesChapterFile("page.jpg", "jpg", supported) { true })
+        assertFalse(isLocalSeriesChapterFile("cover.jpg", "jpg", supported) { true })
+        assertFalse(isLocalSeriesChapterFile("metadata.opf", "opf", supported) { false })
+        assertFalse(isLocalSeriesChapterFile("ComicInfo.xml", "xml", supported) { false })
+    }
+
+    @Test
     fun `overlapping roots reject ancestors but allow siblings`() {
         assertTrue(localDirectoriesOverlap("provider:primary:", "provider:primary:Books"))
         assertTrue(localDirectoriesOverlap("provider:root", "provider:root/books"))

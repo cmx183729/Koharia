@@ -18,6 +18,8 @@ data class ConnectionLibraryEntryKey(
 data class ConnectionLibraryEntry(
     val manga: Manga,
     val libraryManga: LibraryManga? = null,
+    /** Kind resolved from the owning source; null means the owner was not a registered connection. */
+    val libraryKind: ConnectionLibraryKind? = null,
 ) {
     val sourceId: Long get() = manga.source
     val key: ConnectionLibraryEntryKey get() = ConnectionLibraryEntryKey(sourceId, manga.id)
@@ -29,10 +31,15 @@ fun Manga.isConnectionLibraryEntry(sourceManager: SourceManager): Boolean {
     return behavior?.providerManagedLibrary == true
 }
 
-fun SourceManager.providerManagedLibrarySourceIds(): Set<Long> {
+fun SourceManager.providerManagedLibrarySourceIds(
+    allowedLibraryKinds: Set<ConnectionLibraryKind>? = null,
+): Set<Long> {
     return getCatalogueSources()
         .filter { source ->
-            (source as? ConnectionMangaBehaviorAdapter)?.mangaBehavior?.providerManagedLibrary == true
+            val behavior = (source as? ConnectionMangaBehaviorAdapter)?.mangaBehavior
+            val kind = (source as? ConnectionSource)?.libraryKind
+            behavior?.providerManagedLibrary == true &&
+                (allowedLibraryKinds == null || (kind != null && kind in allowedLibraryKinds))
         }
         .mapTo(mutableSetOf()) { it.id }
 }
@@ -47,19 +54,19 @@ fun mergeConnectionLibraryEntries(entries: Iterable<ConnectionLibraryEntry>): Li
     return result.values.toList()
 }
 
-suspend fun MangaRepository.getProviderManagedLibraryEntries(
-    sourceManager: SourceManager,
-): List<Manga> {
-    return sourceManager.providerManagedLibrarySourceIds()
-        .flatMap { sourceId ->
-            val entries = getMangaBySourceId(sourceId)
-            (sourceManager.get(sourceId) as? ConnectionLibraryMembershipAdapter)
-                ?.filterLibraryEntries(entries)
-                ?: entries
-        }
+/** Removes duplicate rows without collapsing equal local ids owned by different connections. */
+fun distinctConnectionLibraryManga(mangas: Iterable<Manga>): List<Manga> {
+    val seen = HashSet<ConnectionLibraryEntryKey>()
+    return mangas.filter { manga ->
+        seen.add(ConnectionLibraryEntryKey(manga.source, manga.id))
+    }
 }
 
-private suspend fun MangaRepository.getAggregatedProviderManagedLibraryEntries(
+/**
+ * Loads provider-managed rows for maintenance operations without allowing one unavailable
+ * connection to abort the whole operation. Cancellation remains observable to the caller.
+ */
+suspend fun MangaRepository.getProviderManagedLibraryEntries(
     sourceManager: SourceManager,
 ): List<Manga> = sourceManager.providerManagedLibrarySourceIds().flatMap { sourceId ->
     val entries = try {
@@ -70,15 +77,23 @@ private suspend fun MangaRepository.getAggregatedProviderManagedLibraryEntries(
         return@flatMap emptyList()
     }
     val ownedEntries = entries.filter { it.source == sourceId }
-    val source = sourceManager.get(sourceId) as? ConnectionLibraryMembershipAdapter ?: return@flatMap ownedEntries
-    try {
-        source.filterLibraryEntries(ownedEntries).filter { it.source == sourceId }
-    } catch (error: Exception) {
-        if (error is CancellationException) throw error
-        logcat(LogPriority.WARN, error) { "Unable to filter provider-managed library entries for source $sourceId" }
-        emptyList()
+    val adapter = sourceManager.get(sourceId) as? ConnectionLibraryMembershipAdapter
+    if (adapter == null) {
+        ownedEntries
+    } else {
+        try {
+            adapter.filterLibraryEntries(ownedEntries).filter { it.source == sourceId }
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            logcat(LogPriority.WARN, error) { "Unable to filter provider-managed library entries for source $sourceId" }
+            emptyList()
+        }
     }
 }
+
+private suspend fun MangaRepository.getAggregatedProviderManagedLibraryEntries(
+    sourceManager: SourceManager,
+): List<Manga> = getProviderManagedLibraryEntries(sourceManager)
 
 /**
  * Returns favorite rows plus provider-managed rows without network refresh. Membership adapters may
@@ -88,10 +103,17 @@ suspend fun MangaRepository.getAggregatedConnectionLibraryEntries(
     sourceManager: SourceManager,
 ): List<ConnectionLibraryEntry> {
     val favorites = getLibraryManga().map { library ->
-        ConnectionLibraryEntry(library.manga, library)
+        ConnectionLibraryEntry(
+            manga = library.manga,
+            libraryManga = library,
+            libraryKind = (sourceManager.get(library.manga.source) as? ConnectionSource)?.libraryKind,
+        )
     }
     val managed = getAggregatedProviderManagedLibraryEntries(sourceManager).map { manga ->
-        ConnectionLibraryEntry(manga)
+        ConnectionLibraryEntry(
+            manga = manga,
+            libraryKind = (sourceManager.get(manga.source) as? ConnectionSource)?.libraryKind,
+        )
     }
     return mergeConnectionLibraryEntries(favorites + managed)
 }

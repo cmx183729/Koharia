@@ -28,6 +28,7 @@ import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import koharia.connection.ConnectionBrowseScreen
 import koharia.connection.ConnectionLibraryEntryKey
+import koharia.connection.ConnectionLibraryKind
 import koharia.connection.MangaDownloadState
 import koharia.connection.NO_ACTIVE_CONNECTION
 import tachiyomi.domain.library.service.LibraryPreferences
@@ -42,7 +43,10 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
 /** Aggregate library host. It only reads persisted local membership and never refreshes a provider. */
-class ConnectionLibraryScreen : Screen(), ConnectionBrowseScreen {
+class ConnectionLibraryScreen(
+    val allowedLibraryKinds: Set<ConnectionLibraryKind>? = null,
+    private val titleRes: dev.icerock.moko.resources.StringResource = MR.strings.label_library,
+) : Screen(), ConnectionBrowseScreen {
     override val sourceId: Long = NO_ACTIVE_CONNECTION
     override val refreshOnReselect: Boolean = true
 
@@ -62,7 +66,9 @@ class ConnectionLibraryScreen : Screen(), ConnectionBrowseScreen {
 
     @Composable
     override fun Content() {
-        val model = rememberScreenModel { ConnectionLibraryScreenModel() }
+        val model = rememberScreenModel {
+            ConnectionLibraryScreenModel(allowedLibraryKinds = allowedLibraryKinds)
+        }
         runtimeModel = model
         var searchQuery by remember { mutableStateOf<String?>(null) }
         val state by model.state.collectAsState()
@@ -83,7 +89,9 @@ class ConnectionLibraryScreen : Screen(), ConnectionBrowseScreen {
             libraryPreferences.portraitColumns
         }
         val columns by columnPreference.collectAsState()
-        val progressByKey = remember(state.entries) { connectionLibraryReadProgress(state.entries) }
+        val progressByKey = remember(state.entries, model.chapterProgress) {
+            connectionLibraryReadProgress(state.entries, model.chapterProgress)
+        }
         var showFilters by remember { mutableStateOf(false) }
         val ownerOptions = remember(state.entries) { model.ownerOptions() }
         val sortOptions = listOf(
@@ -125,6 +133,7 @@ class ConnectionLibraryScreen : Screen(), ConnectionBrowseScreen {
         if (showFilters) {
             ConnectionLibraryAllFilterSheet(
                 owners = ownerOptions,
+                libraryKinds = model.libraryKindOptions(),
                 sortOptions = sortOptions,
                 filters = state.filters,
                 onDismiss = { showFilters = false },
@@ -158,7 +167,7 @@ class ConnectionLibraryScreen : Screen(), ConnectionBrowseScreen {
                     showFilterAction = true,
                     hasActiveFilters = state.filters.isActive,
                     showConnectionAction = false,
-                    title = stringResource(MR.strings.label_library),
+                    title = stringResource(titleRes),
                     scrollBehavior = scrollBehavior,
                 )
             },

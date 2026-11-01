@@ -40,15 +40,17 @@ import eu.kanade.presentation.util.Screen
 import eu.kanade.presentation.util.isTabletUi
 import eu.kanade.tachiyomi.ui.download.DownloadQueueScreen
 import eu.kanade.tachiyomi.ui.history.HistoryTab
+import eu.kanade.tachiyomi.ui.library.AllComicsTab
 import eu.kanade.tachiyomi.ui.library.BooksTab
 import eu.kanade.tachiyomi.ui.library.ComicsTab
 import eu.kanade.tachiyomi.ui.library.ConnectionLibraryTab
 import eu.kanade.tachiyomi.ui.library.LibraryTab
+import eu.kanade.tachiyomi.ui.library.MangaServersTab
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.more.MoreTab
 import koharia.connection.ConnectionContentScopeController
 import koharia.connection.ConnectionPreferences
-import koharia.connection.LibraryContentScope
+import koharia.connection.ConnectionSource
 import koharia.source.suwayomi.SuwayomiSource
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
@@ -86,12 +88,16 @@ object HomeScreen : Screen() {
         val contentScopes by remember(contentScopeController) {
             contentScopeController.activeScopesChanges()
         }.collectAsState(contentScopeController.activeScopes())
-        val classificationEnabled = LibraryContentScope.COMIC in contentScopes &&
-            LibraryContentScope.BOOK in contentScopes
         val connectionPreferences = remember { Injekt.get<ConnectionPreferences>() }
         val activeConnectionId by connectionPreferences.activeConnectionId.collectPreferenceAsState()
         val registeredSources by
             Injekt.get<SourceManager>().catalogueSources.collectAsState(emptyList())
+        val registeredLibraryKinds = remember(registeredSources) {
+            registeredSources.mapNotNull { (it as? ConnectionSource)?.libraryKind }.toSet()
+        }
+        val libraryNavigation = homeLibraryNavigation(contentScopes, registeredLibraryKinds)
+        val classificationEnabled = libraryNavigation.classificationEnabled
+        val sourceKindSplitEnabled = libraryNavigation.sourceKindSplitEnabled
         val suwayomiActive =
             remember(activeConnectionId, registeredSources) {
                 Injekt.get<SourceManager>().get(activeConnectionId) is SuwayomiSource
@@ -116,8 +122,21 @@ object HomeScreen : Screen() {
             mergeOrganizations,
         )
         val organizationTabs = koharia.connection.ui.organizationNavigationTabs(organizationNavigation)
-        val defaultLibraryTab: ConnectionLibraryTab = if (classificationEnabled) ComicsTab else LibraryTab
-        val tabs = if (classificationEnabled) {
+        val defaultLibraryTab: ConnectionLibraryTab = when (libraryNavigation.defaultTab) {
+            HomeLibraryDefaultTab.ALL_COMICS -> AllComicsTab
+            HomeLibraryDefaultTab.COMICS -> ComicsTab
+            HomeLibraryDefaultTab.LIBRARY -> LibraryTab
+        }
+        val tabs = if (sourceKindSplitEnabled) {
+            buildList<eu.kanade.presentation.util.Tab> {
+                add(AllComicsTab)
+                add(MangaServersTab)
+                if (suwayomiActive) add(SuwayomiBrowseTab)
+                addAll(organizationTabs)
+                add(HistoryTab)
+                add(MoreTab)
+            }
+        } else if (classificationEnabled) {
             buildList<eu.kanade.presentation.util.Tab> {
                 add(ComicsTab)
                 add(BooksTab)
@@ -205,7 +224,7 @@ object HomeScreen : Screen() {
                 activity?.finish()
             }
 
-            LaunchedEffect(classificationEnabled, suwayomiActive, organizationNavigation) {
+            LaunchedEffect(classificationEnabled, sourceKindSplitEnabled, suwayomiActive, organizationNavigation) {
                 tabNavigator.current =
                     when {
                         tabNavigator.current !in tabs -> {
@@ -223,7 +242,7 @@ object HomeScreen : Screen() {
                     }
             }
 
-            LaunchedEffect(classificationEnabled, suwayomiActive) {
+            LaunchedEffect(classificationEnabled, sourceKindSplitEnabled, suwayomiActive) {
                 launch {
                     librarySearchEvent.receiveAsFlow().collectLatest {
                         goToLibraryTab()
@@ -240,7 +259,11 @@ object HomeScreen : Screen() {
                     openTabEvent.receiveAsFlow().collectLatest {
                         tabNavigator.current = when (it) {
                             is Tab.Library -> defaultLibraryTab
-                            Tab.Updates -> if (classificationEnabled) BooksTab else LibraryTab
+                            Tab.Updates -> when {
+                                classificationEnabled -> BooksTab
+                                sourceKindSplitEnabled -> MangaServersTab
+                                else -> LibraryTab
+                            }
                             Tab.History -> HistoryTab
                             is Tab.More -> MoreTab
                             Tab.Browse -> if (suwayomiActive) SuwayomiBrowseTab else defaultLibraryTab

@@ -8,6 +8,7 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import koharia.connection.ConnectionLibraryEntry
+import koharia.connection.ConnectionLibraryKind
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -278,6 +279,62 @@ class ConnectionLibrarySearchTest {
         )
 
         assertEquals(listOf(ownerTwo), results)
+    }
+
+    @Test
+    fun `aggregate tab kind filter excludes other and unregistered owners`() {
+        val local = ConnectionLibraryEntry(
+            Manga.create().copy(id = 8L, source = 41L, title = "Local"),
+            libraryKind = ConnectionLibraryKind.LOCAL,
+        )
+        val server = ConnectionLibraryEntry(
+            Manga.create().copy(id = 9L, source = 42L, title = "Server"),
+            libraryKind = ConnectionLibraryKind.SERVER,
+        )
+        val unknown = ConnectionLibraryEntry(
+            Manga.create().copy(id = 10L, source = 43L, title = "Unknown"),
+        )
+
+        assertEquals(
+            listOf(local),
+            filterConnectionLibraryEntriesByKind(
+                listOf(server, unknown, local),
+                setOf(ConnectionLibraryKind.LOCAL, ConnectionLibraryKind.WEBDAV, ConnectionLibraryKind.SMB),
+            ),
+        )
+    }
+
+    @Test
+    fun `library kind filter retains only entries owned by the selected kind`() {
+        val local = ConnectionLibraryEntry(
+            Manga.create().copy(id = 8L, source = 41L, title = "Local"),
+            libraryKind = ConnectionLibraryKind.LOCAL,
+        )
+        val server = ConnectionLibraryEntry(
+            Manga.create().copy(id = 9L, source = 42L, title = "Server"),
+            libraryKind = ConnectionLibraryKind.SERVER,
+        )
+        val unregistered = ConnectionLibraryEntry(
+            Manga.create().copy(id = 10L, source = 43L, title = "Unknown owner"),
+        )
+
+        assertEquals(
+            listOf(local),
+            transformConnectionLibraryEntries(
+                listOf(server, unregistered, local),
+                "",
+                false,
+                ConnectionLibraryFilters(libraryKind = ConnectionLibraryKind.LOCAL),
+            ),
+        )
+    }
+
+    @Test
+    fun `library kind filter is an active filter`() {
+        assertEquals(
+            true,
+            ConnectionLibraryFilters(libraryKind = ConnectionLibraryKind.WEBDAV).isActive,
+        )
     }
 
     @Test

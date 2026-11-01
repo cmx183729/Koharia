@@ -120,6 +120,7 @@ class SuwayomiSource(private val context: Context, override val connectionProfil
     AutoCloseable {
     override val id = connectionProfile.id
     override val name = connectionProfile.name
+    override val libraryKind = koharia.connection.ConnectionLibraryKind.SERVER
 
     override fun captureChapterOwner(): koharia.connection.ConnectionChapterOwner {
         val captured = session()

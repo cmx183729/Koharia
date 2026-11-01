@@ -66,6 +66,7 @@ import eu.kanade.tachiyomi.data.export.LibraryExporter
 import eu.kanade.tachiyomi.data.export.LibraryExporter.ExportOptions
 import eu.kanade.tachiyomi.util.system.DeviceUtil
 import eu.kanade.tachiyomi.util.system.toast
+import koharia.connection.distinctConnectionLibraryManga
 import koharia.connection.getProviderManagedLibraryEntries
 import koharia.epub.cache.EpubCacheManager
 import koharia.epub.cache.EpubCachePreferences
@@ -465,10 +466,10 @@ object SettingsDataScreen : SearchableSettings {
                             val deletedFiles = withIOContext {
                                 var count = 0
                                 if (CleanupTarget.RemovedMangaCache in selections) {
-                                    val activeManga = (
+                                    val activeManga = distinctConnectionLibraryManga(
                                         getFavorites.await() +
-                                            mangaRepository.getProviderManagedLibraryEntries(sourceManager)
-                                        ).distinctBy(Manga::id)
+                                            mangaRepository.getProviderManagedLibraryEntries(sourceManager),
+                                    )
                                     count += localCacheCleaner.clearDeletedMangaCache(activeManga)
                                 }
                                 if (CleanupTarget.CoverCache in selections) {

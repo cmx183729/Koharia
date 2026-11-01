@@ -20,11 +20,13 @@ import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
+import dev.icerock.moko.resources.StringResource
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.source.Source
 import koharia.connection.ConnectionBrowseAdapter
 import koharia.connection.ConnectionBrowseScreen
+import koharia.connection.ConnectionLibraryKind
 import koharia.connection.ConnectionPreferences
 import koharia.connection.LibraryContentScope
 import koharia.connection.NO_ACTIVE_CONNECTION
@@ -45,6 +47,8 @@ import androidx.compose.runtime.collectAsState as collectFlowAsState
 sealed class ConnectionLibraryTab(
     private val libraryScope: LibraryContentScope,
     private val tabIndex: UShort,
+    private val allowedLibraryKinds: Set<ConnectionLibraryKind>? = null,
+    private val titleRes: StringResource? = null,
 ) : Tab {
 
     // Voyager serializes Tab instances when the host Activity is stopped. The
@@ -64,7 +68,12 @@ sealed class ConnectionLibraryTab(
     ): ConnectionBrowseScreen? {
         if (libraryScope == LibraryContentScope.ALL) {
             return synchronized(this) {
-                if (runtimeAggregateScreen == null) runtimeAggregateScreen = ConnectionLibraryScreen()
+                if (runtimeAggregateScreen == null) {
+                    runtimeAggregateScreen = ConnectionLibraryScreen(
+                        allowedLibraryKinds = allowedLibraryKinds,
+                        titleRes = titleRes ?: MR.strings.label_library,
+                    )
+                }
                 runtimeAggregateScreen
             }
         }
@@ -88,7 +97,7 @@ sealed class ConnectionLibraryTab(
         get() {
             val isSelected = LocalTabNavigator.current.current.key == key
             val title = when (libraryScope) {
-                LibraryContentScope.ALL -> stringResource(MR.strings.label_library)
+                LibraryContentScope.ALL -> stringResource(titleRes ?: MR.strings.label_library)
                 LibraryContentScope.COMIC -> stringResource(MR.strings.label_comics)
                 LibraryContentScope.BOOK -> stringResource(MR.strings.label_books)
             }
@@ -176,13 +185,31 @@ sealed class ConnectionLibraryTab(
 
     companion object {
         fun clearAllRuntimeState() {
-            listOf<ConnectionLibraryTab>(LibraryTab, ComicsTab, BooksTab)
+            listOf<ConnectionLibraryTab>(LibraryTab, AllComicsTab, MangaServersTab, ComicsTab, BooksTab)
                 .forEach(ConnectionLibraryTab::clearRuntimeState)
         }
     }
 }
 
 data object LibraryTab : ConnectionLibraryTab(LibraryContentScope.ALL, 0u)
+
+data object AllComicsTab : ConnectionLibraryTab(
+    libraryScope = LibraryContentScope.ALL,
+    tabIndex = 0u,
+    allowedLibraryKinds = setOf(
+        ConnectionLibraryKind.LOCAL,
+        ConnectionLibraryKind.WEBDAV,
+        ConnectionLibraryKind.SMB,
+    ),
+    titleRes = MR.strings.connection_library_all_comics,
+)
+
+data object MangaServersTab : ConnectionLibraryTab(
+    libraryScope = LibraryContentScope.ALL,
+    tabIndex = 1u,
+    allowedLibraryKinds = setOf(ConnectionLibraryKind.SERVER),
+    titleRes = MR.strings.connection_library_manga_servers,
+)
 
 data object ComicsTab : ConnectionLibraryTab(LibraryContentScope.COMIC, 0u)
 

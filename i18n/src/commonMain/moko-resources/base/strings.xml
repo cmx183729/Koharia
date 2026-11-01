@@ -293,8 +293,17 @@
     <string name="pref_connection_management">Library connections</string>
     <string name="connection_unavailable">Unavailable</string>
     <string name="connection_library_refresh_failed">Could not refresh the combined library. Showing saved items.</string>
+    <string name="connection_library_all_comics">All comics</string>
+    <string name="connection_library_manga_servers">Manga servers</string>
     <string name="connection_library_all_connections">All connections</string>
     <string name="connection_library_filter_owner">Connection</string>
+    <string name="connection_library_filter_kind">Library type</string>
+    <string name="connection_library_all_kinds">All library types</string>
+    <string name="connection_library_kind_local">Local storage</string>
+    <string name="connection_library_kind_webdav">WebDAV storage</string>
+    <string name="connection_library_kind_smb">SMB storage</string>
+    <string name="connection_library_kind_server">Server</string>
+    <string name="connection_library_kind_unknown">Unknown</string>
     <string name="connection_library_filter_favorites">Favorites only</string>
     <string name="connection_library_filter_completed">Completed series only</string>
     <string name="connection_library_filter_downloaded">Downloaded on this device only</string>

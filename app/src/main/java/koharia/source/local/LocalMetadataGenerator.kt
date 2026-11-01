@@ -8,6 +8,7 @@ import koharia.connection.MetadataFilenameTemplate
 import koharia.connection.MetadataSuggestionSource
 import koharia.media.LocalMediaFormats
 import koharia.scan.ArchiveMetadata
+import koharia.source.ehentai.EHenTagTranslation
 import org.jsoup.nodes.Document
 
 internal data class LocalEmbeddedMetadata(
@@ -25,7 +26,7 @@ internal fun ArchiveMetadata.toLocalEmbeddedMetadata(): LocalEmbeddedMetadata = 
     title = title ?: series,
     series = series,
     authors = authors,
-    subjects = (genres + tags).distinct(),
+    subjects = EHenTagTranslation.sort((genres + tags).distinct(), translate = true),
     source = MetadataSuggestionSource.JHENTAI_AMETADATA,
 )
 

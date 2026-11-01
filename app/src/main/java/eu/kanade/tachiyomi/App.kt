@@ -43,6 +43,7 @@ import eu.kanade.tachiyomi.di.PreferenceModule
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.NetworkPreferences
 import eu.kanade.tachiyomi.ui.base.delegate.SecureActivityDelegate
+import eu.kanade.tachiyomi.ui.home.homeLibraryNavigation
 import eu.kanade.tachiyomi.util.system.AppShortcutManager
 import eu.kanade.tachiyomi.util.system.DeviceUtil
 import eu.kanade.tachiyomi.util.system.GLUtil
@@ -53,7 +54,6 @@ import eu.kanade.tachiyomi.util.system.notify
 import koharia.connection.ConnectionConfigManager
 import koharia.connection.ConnectionContentScopeController
 import koharia.connection.ConnectionPreferences
-import koharia.connection.LibraryContentScope
 import koharia.core.migration.Migrator
 import koharia.core.migration.migrations.migrations
 import koharia.telemetry.TelemetryConfig
@@ -192,8 +192,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
             .onEach { scopes ->
                 AppShortcutManager.updateLibraryShortcuts(
                     context = this,
-                    classificationEnabled = LibraryContentScope.COMIC in scopes &&
-                        LibraryContentScope.BOOK in scopes,
+                    classificationEnabled = homeLibraryNavigation(scopes).classificationEnabled,
                 )
             }
             .launchIn(scope)

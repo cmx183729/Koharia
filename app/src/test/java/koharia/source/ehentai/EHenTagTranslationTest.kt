@@ -175,6 +175,7 @@ class EHenTagTranslationTest {
             EHenTagTranslation.replace(mapOf("  artist:  test-normalization  " to "艺术家：测试"))
 
             assertEquals("艺术家：测试", EHenTagTranslation.toChinese("artist: test-normalization"))
+            assertEquals("语言: 中文", EHenTagTranslation.toChinese("language:Chinese"))
             assertEquals("untranslated: value", EHenTagTranslation.toChinese(" untranslated:   value "))
         } finally {
             EHenTagTranslation.replace(emptyMap())

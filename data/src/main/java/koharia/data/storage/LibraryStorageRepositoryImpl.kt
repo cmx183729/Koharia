@@ -5,6 +5,7 @@ import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import koharia.data.observeBatched
 import koharia.domain.storage.LibraryStorageRepository
 import koharia.domain.storage.StorageRecord
+import koharia.domain.storage.StorageRecordBatchEntry
 import koharia.domain.storage.StorageRecordUpdate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import tachiyomi.data.Database
@@ -68,6 +69,33 @@ class LibraryStorageRepositoryImpl(private val database: Database) : LibraryStor
             checkActive()
         }
     }
+
+    override suspend fun putBatch(
+        connection: Long,
+        account: String,
+        root: String,
+        entries: List<StorageRecordBatchEntry>,
+        checkActive: () -> Unit,
+    ) {
+        require(entries.isNotEmpty())
+        require(entries.map { it.namespace to it.record.key }.distinct().size == entries.size)
+        database.transaction {
+            checkActive()
+            entries.forEach { entry ->
+                queries.putRecord(
+                    connection,
+                    account,
+                    root,
+                    entry.namespace,
+                    entry.record.key,
+                    entry.record.payload,
+                    entry.record.revision,
+                )
+                checkActive()
+            }
+        }
+    }
+
     override suspend fun replaceIfUnchanged(
         connection: Long,
         account: String,

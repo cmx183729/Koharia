@@ -976,7 +976,7 @@ class LocalFolderSettingsScreen(
                             TextPreferenceWidget(
                                 title = stringResource(MR.strings.local_library_metadata_storage),
                                 subtitle = metadataLabel(context, config.metadataStorage),
-                                enabled = false,
+                                enabled = canChangeMetadataStorage(config.setupCompleted),
                             )
                         }
                     } else if (setupStep == LocalLibrarySetupStep.LIBRARIES) {

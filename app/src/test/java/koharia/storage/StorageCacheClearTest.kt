@@ -25,11 +25,15 @@ class StorageCacheClearTest {
         val marker = File(idle.parentFile, "complete.ok").apply { writeText("checked") }
         val manual = File(root, "manual.cbz").apply { writeText("unmanaged file") }
         val index = StorageCacheIndex.get(root)
-        val first = index.acquire(active)
-        val second = index.acquire(active)
+        val leaseDirectory = File(root, "active/../active")
+        val first = index.acquire(leaseDirectory)
+        val second = index.acquire(leaseDirectory)
         try {
             index.access {
-                assertEquals(1, clearUnused())
+                assertEquals(
+                    1,
+                    clearUnused(),
+                )
                 assertFalse(idle.exists())
                 assertFalse(marker.exists())
                 assertEquals(range.length() + complete.length(), measuredBytes())

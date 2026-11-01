@@ -2,6 +2,7 @@ package koharia.storage
 
 import koharia.domain.storage.LibraryStorageRepository
 import koharia.domain.storage.StorageRecord
+import koharia.domain.storage.StorageRecordBatchEntry
 import koharia.domain.storage.StorageRecordUpdate
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -24,59 +25,65 @@ class StorageBackup(private val repository: LibraryStorageRepository, private va
         val snapshot = json.decodeFromString<Snapshot>(payload)
         require(snapshot.schema == 1 && snapshot.root == expectedRoot && snapshot.account.isNotBlank())
         require(snapshot.entries.all { it.namespace in NAMESPACES })
-        for (entry in snapshot.entries) {
-            if (entry.namespace == "progress") {
-                val incoming =
-                    decodeStoragePendingProgress(StorageRecord(entry.key, entry.payload, entry.revision), json)
-                val restored = StorageRecord(
-                    entry.key,
-                    json.encodeToString(
-                        incoming.copy(
-                            requiresConfirmation =
-                            incoming.requiresConfirmation || incoming.pending,
-                        ),
-                    ),
-                    entry.revision,
-                )
-                while (true) {
-                    currentCoroutineContext().ensureActive()
-                    val existing = repository.getSnapshot(
-                        connection,
-                        snapshot.account,
-                        snapshot.root,
-                        entry.namespace,
-                        entry.key,
-                    )
-                    if (existing != null) {
-                        val current = decodeStoragePendingProgress(existing, json)
-                        if (current.record.version != incoming.record.version) break
-                        val winner =
-                            latestStorageProgress(
-                                listOf(current.record, incoming.record),
-                                incoming.record.resource,
-                                incoming.record.version,
-                            )
-                        if (winner != incoming.record || current.record == incoming.record) break
-                    }
-                    if (repository.compareAndSet(
-                            connection,
-                            snapshot.account,
-                            snapshot.root,
-                            listOf(StorageRecordUpdate(entry.namespace, existing, restored)),
-                        )
-                    ) {
-                        break
-                    }
-                }
-                continue
-            }
-            repository.put(
+        val nonProgressEntries = snapshot.entries.filter { it.namespace != "progress" }
+        if (nonProgressEntries.isNotEmpty()) {
+            val activeContext = currentCoroutineContext()
+            repository.putBatch(
                 connection,
                 snapshot.account,
                 snapshot.root,
-                entry.namespace,
-                StorageRecord(entry.key, entry.payload, entry.revision),
+                nonProgressEntries.map { entry ->
+                    StorageRecordBatchEntry(
+                        entry.namespace,
+                        StorageRecord(entry.key, entry.payload, entry.revision),
+                    )
+                },
+                checkActive = { activeContext.ensureActive() },
             )
+        }
+        for (entry in snapshot.entries) {
+            if (entry.namespace != "progress") continue
+            val incoming =
+                decodeStoragePendingProgress(StorageRecord(entry.key, entry.payload, entry.revision), json)
+            val restored = StorageRecord(
+                entry.key,
+                json.encodeToString(
+                    incoming.copy(
+                        requiresConfirmation = incoming.requiresConfirmation || incoming.pending,
+                    ),
+                ),
+                entry.revision,
+            )
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val existing = repository.getSnapshot(
+                    connection,
+                    snapshot.account,
+                    snapshot.root,
+                    entry.namespace,
+                    entry.key,
+                )
+                if (existing != null) {
+                    val current = decodeStoragePendingProgress(existing, json)
+                    if (current.record.version != incoming.record.version) break
+                    val winner =
+                        latestStorageProgress(
+                            listOf(current.record, incoming.record),
+                            incoming.record.resource,
+                            incoming.record.version,
+                        )
+                    if (winner != incoming.record || current.record == incoming.record) break
+                }
+                if (repository.compareAndSet(
+                        connection,
+                        snapshot.account,
+                        snapshot.root,
+                        listOf(StorageRecordUpdate(entry.namespace, existing, restored)),
+                    )
+                ) {
+                    break
+                }
+            }
         }
     }
 

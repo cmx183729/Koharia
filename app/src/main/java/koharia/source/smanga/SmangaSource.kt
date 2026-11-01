@@ -25,6 +25,7 @@ import koharia.connection.ConnectionChapterMetadata
 import koharia.connection.ConnectionDownloadStorageAdapter
 import koharia.connection.ConnectionHealthAdapter
 import koharia.connection.ConnectionHistorySyncAdapter
+import koharia.connection.ConnectionLibraryMembershipAdapter
 import koharia.connection.ConnectionManagedLifecycle
 import koharia.connection.ConnectionMangaBehavior
 import koharia.connection.ConnectionMangaBehaviorAdapter
@@ -106,6 +107,7 @@ class SmangaSource(private val context: Context, override val connectionProfile:
     ConnectionPageAdapter,
     ConnectionAccountAdapter,
     ConnectionHealthAdapter,
+    ConnectionLibraryMembershipAdapter,
     ConnectionMangaBehaviorAdapter,
     koharia.connection.ConnectionShelfLocalStateAdapter,
     ConnectionDownloadStorageAdapter,
@@ -122,6 +124,7 @@ class SmangaSource(private val context: Context, override val connectionProfile:
     AutoCloseable {
     override val id = connectionProfile.id
     override val name = connectionProfile.name
+    override val libraryKind = koharia.connection.ConnectionLibraryKind.SERVER
 
     override suspend fun textReplacementOwnerKey(): String = preferences.accountKey
 
@@ -271,6 +274,10 @@ class SmangaSource(private val context: Context, override val connectionProfile:
     override val usesSharedDownloadStorage = false
     override fun mergeShelfLocalState(remote: Manga, local: Manga?): Manga =
         koharia.connection.mergeShelfMangaMetadata(remote, local)
+
+    override suspend fun filterLibraryEntries(mangas: List<Manga>): List<Manga> = mangas.filter {
+        it.matchesSmangaLibraryMembership(id, preferences.accountKey)
+    }
 
     override val mangaBehavior =
         ConnectionMangaBehavior(

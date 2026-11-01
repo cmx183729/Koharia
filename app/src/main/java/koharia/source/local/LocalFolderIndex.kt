@@ -106,6 +106,15 @@ internal fun isLocalAuxiliaryFile(name: String): Boolean {
         lower.substringBeforeLast('.') in setOf("cover", "folder", "poster", "!cover")
 }
 
+internal fun isLocalSeriesChapterFile(
+    name: String,
+    extension: String,
+    supportedExtensions: Set<String>,
+    isImage: () -> Boolean,
+): Boolean {
+    return !isLocalAuxiliaryFile(name) && (extension in supportedExtensions || isImage())
+}
+
 internal fun withLocalFolderFingerprints(items: List<LocalLibraryItem>): List<LocalLibraryItem> {
     val children = items.groupBy { it.rootId to it.relativePath.substringBeforeLast('/', "") }
     val updated = items.associateBy { it.itemKey }.toMutableMap()

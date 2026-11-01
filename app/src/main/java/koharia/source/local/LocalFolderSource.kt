@@ -382,6 +382,8 @@ class LocalFolderSource(
     override val libraryShelves: Flow<List<ConnectionLibraryShelf>> = preferences.libraryStateChanges()
         .map { preferences.getConfig().toConnectionLibraryShelves(context) }
 
+    override val libraryKind: koharia.connection.ConnectionLibraryKind
+        get() = localLibraryKind(koharia.storage.NetworkStoragePreferences(id).configuration.mode)
     override val name: String = customName
     override val lang: String = "other"
     override val supportsLatest: Boolean = true
@@ -2605,8 +2607,8 @@ class LocalFolderSource(
         return files
             .filter { !it.isDirectory }
             .sortedWith { first, second ->
-                val firstCover = first.name.orEmpty().lowercase().startsWith("cover")
-                val secondCover = second.name.orEmpty().lowercase().startsWith("cover")
+                val firstCover = isPreferredLocalCoverName(first.name.orEmpty())
+                val secondCover = isPreferredLocalCoverName(second.name.orEmpty())
                 when {
                     firstCover != secondCover -> if (firstCover) -1 else 1
                     else -> first.name.orEmpty().compareToCaseInsensitiveNaturalOrder(second.name.orEmpty())
@@ -2755,6 +2757,7 @@ class LocalFolderSource(
         return FolderImageScan(
             entries = entries,
             images = images,
+            imageUris = imageUris,
             pureImages = isLocalImageComicFolder(
                 images.size,
                 files.any { it.file.uri !in imageUris && it.extension in SUPPORTED_FILE_EXTENSIONS },
@@ -2825,10 +2828,15 @@ class LocalFolderSource(
                     )
                 }
             }
+            val supportedExtensions = supportedExtensions(root.config.contentType)
             content.filter {
-                !it.directory &&
-                    it.extension in supportedExtensions(root.config.contentType) &&
-                    !(folderImages.pureImages && imageSeriesEnabled && scanImage(it))
+                shouldIncludeLocalFolderEntry(
+                    entry = it,
+                    supportedExtensions = supportedExtensions,
+                    pureImages = folderImages.pureImages,
+                    imageSeriesEnabled = imageSeriesEnabled,
+                    imageUris = folderImages.imageUris,
+                )
             }
                 .forEach { file ->
                     val sidecars = children.filter {
@@ -2879,9 +2887,13 @@ class LocalFolderSource(
         reader: LocalScanDirectoryReader,
     ): List<ScanCandidate> {
         val rootEntries = reader.list(root.directory).filterNot { it.name.startsWith('.') }
+        val rootSupportedExtensions = supportedExtensions(root.config.contentType)
         val rootChapters = rootEntries.filter { entry ->
-            !entry.directory &&
-                (entry.extension in supportedExtensions(root.config.contentType) || scanImage(entry))
+            !entry.directory && isLocalSeriesChapterFile(
+                entry.name,
+                entry.extension,
+                rootSupportedExtensions,
+            ) { scanImage(entry) }
         }
         val result = buildList {
             if (rootChapters.isNotEmpty()) {
@@ -2907,9 +2919,15 @@ class LocalFolderSource(
                 val files = reader.list(directory.file).filterNot { it.name.startsWith('.') }
                 val chapters = files.filter { entry ->
                     if (entry.directory) {
-                        reader.list(entry.file).any(::scanImage)
+                        reader.list(entry.file).any { child ->
+                            !isLocalAuxiliaryFile(child.name) && scanImage(child)
+                        }
                     } else {
-                        entry.extension in SUPPORTED_FILE_EXTENSIONS || scanImage(entry)
+                        isLocalSeriesChapterFile(
+                            entry.name,
+                            entry.extension,
+                            SUPPORTED_FILE_EXTENSIONS,
+                        ) { scanImage(entry) }
                     }
                 }
                 val contentType = if (root.config.contentType != LocalLibraryContentType.MIXED) {
@@ -3143,7 +3161,11 @@ class LocalFolderSource(
                                             if (!previewUrls.add(url)) return@mapNotNull null
                                             SManga.create().apply {
                                                 this.url = url
-                                                title = candidate.resource.nameWithoutExtension.orEmpty()
+                                                title =
+                                                    scanFallbackTitle(
+                                                        candidate.relativePath,
+                                                        candidate.resource.isDirectory,
+                                                    )
                                                 thumbnail_url = url
                                                 initialized = false
                                             }.toDomainManga(id).copy(chapterFlags = defaultChapterFlags)
@@ -3229,11 +3251,7 @@ class LocalFolderSource(
 
                             (existing?.toSManga()?.takeIf { unchanged } ?: SManga.create()).apply {
                                 if (!unchanged) {
-                                    title = if (candidate.resource.isDirectory) {
-                                        candidate.resource.name.orEmpty()
-                                    } else {
-                                        candidate.resource.nameWithoutExtension.orEmpty()
-                                    }
+                                    title = scanFallbackTitle(candidate.relativePath, candidate.resource.isDirectory)
                                 }
                                 this.url = url
                                 val metadataRole = scannedItem.metadataRole(config.organizationMode(candidate.root))
@@ -3612,6 +3630,7 @@ class LocalFolderSource(
     private data class FolderImageScan(
         val entries: List<LocalScanFile>,
         val images: List<LocalScanFile>,
+        val imageUris: Set<Uri>,
         val pureImages: Boolean,
     )
 
@@ -3621,6 +3640,18 @@ class LocalFolderSource(
         val relativePath: String,
         val indexedPath: String = relativePath,
     )
+}
+
+internal fun shouldIncludeLocalFolderEntry(
+    entry: LocalScanFile,
+    supportedExtensions: Set<String>,
+    pureImages: Boolean,
+    imageSeriesEnabled: Boolean,
+    imageUris: Set<Uri>,
+): Boolean {
+    return !entry.directory &&
+        entry.extension in supportedExtensions &&
+        !(pureImages && imageSeriesEnabled && entry.file.uri in imageUris)
 }
 
 private fun LocalLibraryContentType.toConnectionMediaType(): ConnectionMediaType = when (this) {

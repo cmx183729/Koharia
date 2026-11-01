@@ -24,6 +24,7 @@ import koharia.connection.ConnectionChapterMetadata
 import koharia.connection.ConnectionDownloadStorageAdapter
 import koharia.connection.ConnectionHealthAdapter
 import koharia.connection.ConnectionHistorySyncAdapter
+import koharia.connection.ConnectionLibraryMembershipAdapter
 import koharia.connection.ConnectionLibraryRefreshAdapter
 import koharia.connection.ConnectionLibraryRefreshResult
 import koharia.connection.ConnectionManagedLifecycle
@@ -131,6 +132,7 @@ class LanraragiSource(
     ConnectionMangaBehaviorAdapter,
     ConnectionDownloadStorageAdapter,
     ConnectionLibraryRefreshAdapter,
+    ConnectionLibraryMembershipAdapter,
     ConnectionReaderRoutingAdapter,
     ConnectionMangaProgressAdapter,
     ConnectionHistorySyncAdapter,
@@ -142,6 +144,7 @@ class LanraragiSource(
 
     override val id = connectionProfile.id
     override val name = connectionProfile.name
+    override val libraryKind = koharia.connection.ConnectionLibraryKind.SERVER
     override val lang = "other"
     override val supportsLatest = true
     val preferences = LanraragiPreferences(id)
@@ -212,6 +215,9 @@ class LanraragiSource(
     private var apiAddress: String? = null
     private var apiInternalAddress: String? = null
     private var apiCredential: String? = null
+
+    @Volatile
+    private var indexedCatalogIdentity = preferences.indexedIdentity
     val api: LanraragiApi get() = synchronized(this) {
         val address = preferences.address
         val credential = preferences.apiKey
@@ -248,6 +254,18 @@ class LanraragiSource(
     override val preserveDownloadPageBoundaries = true
     override val allowsUnvalidatedNetwork = true
     override val usesSharedDownloadStorage = false
+    override suspend fun filterLibraryEntries(mangas: List<Manga>): List<Manga> {
+        val currentIdentity = lanraragiCatalogIdentity(
+            preferences.address,
+            preferences.internalAddress,
+            preferences.apiKey,
+        )
+        if (lanraragiCatalogIdentityChanged(indexedCatalogIdentity, currentIdentity)) return emptyList()
+
+        val entries = repository.entries(id)
+        return mangas.filter { it.matchesLanraragiLibraryMembership(id, entries) }
+    }
+
     override val mangaBehavior = ConnectionMangaBehavior(
         supportsChapterCoverGrid = true,
         providerManagedLibrary = true,
@@ -627,6 +645,11 @@ class LanraragiSource(
         if (!hasValidConnection()) return@withLock Result.failure(invalidAddress())
         lastRefreshAttempt = System.currentTimeMillis()
         val generation = maxOf(System.currentTimeMillis(), repository.lastSync(id) + 1)
+        val activeCatalogIdentity = lanraragiCatalogIdentity(
+            preferences.address,
+            preferences.internalAddress,
+            preferences.apiKey,
+        )
         val activeApi = api
         val started = System.nanoTime()
         var currentStage = "starting"
@@ -715,7 +738,8 @@ class LanraragiSource(
             stage("publish")
             repository.publish(id, generation, completedAt)
             logcat { "LanraragiCatalog: published connectionId=$id generation=$generation archives=$count" }
-            preferences.markIndexed(activeApi.base.toString())
+            preferences.markIndexed(activeApi.base.toString(), activeCatalogIdentity)
+            this@LanraragiSource.indexedCatalogIdentity = activeCatalogIdentity
             status.value = LanraragiSyncStatus(count = count, completedAt = completedAt)
             stage("completed")
             catalogDiagnostic(

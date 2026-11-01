@@ -7,6 +7,7 @@ import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import koharia.connection.ConnectionLibraryEntry
 import koharia.connection.ConnectionLibraryEntryKey
+import koharia.connection.ConnectionLibraryKind
 import koharia.connection.ConnectionSource
 import koharia.connection.getAggregatedConnectionLibraryEntries
 import kotlinx.coroutines.CancellationException
@@ -20,6 +21,8 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import tachiyomi.domain.chapter.model.Chapter
+import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.library.model.LibraryDisplayMode
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.repository.MangaRepository
@@ -31,14 +34,27 @@ class ConnectionLibraryScreenModel(
     private val mangaRepository: MangaRepository = Injekt.get(),
     private val sourceManager: SourceManager = Injekt.get(),
     private val sourcePreferences: SourcePreferences = Injekt.get(),
+    private val allowedLibraryKinds: Set<ConnectionLibraryKind>? = null,
     private val downloadCount: (Manga) -> Int = { manga -> Injekt.get<DownloadManager>().getDownloadCount(manga) },
     private val ownerLabel: (Long) -> String = { sourceId ->
         val source = sourceManager.get(sourceId)
         (source as? ConnectionSource)?.connectionProfile?.name ?: source?.name.orEmpty()
     },
+    private val loadChapterProgress: suspend (List<ConnectionLibraryEntry>) -> Map<Long, List<Chapter>> = { entries ->
+        val uniqueIds = entries.filter { it.libraryManga == null }.map { it.manga.id }.distinct()
+        if (uniqueIds.isEmpty() || uniqueIds.size != entries.count { it.libraryManga == null }) {
+            emptyMap()
+        } else {
+            uniqueIds.chunked(900)
+                .flatMap { Injekt.get<ChapterRepository>().getChaptersByMangaIds(it) }
+                .groupBy { it.mangaId }
+        }
+    },
 ) : StateScreenModel<ConnectionLibraryScreenModel.State>(State()) {
 
     private var allEntries: List<ConnectionLibraryEntry> = emptyList()
+    private var chaptersByMangaId: Map<Long, List<Chapter>> = emptyMap()
+    val chapterProgress: Map<Long, List<Chapter>> get() = chaptersByMangaId
     private var genreQuery = false
     private var manualDownloadCounts: MutableMap<ConnectionLibraryEntryKey, Int> = mutableMapOf()
     private var refreshJob: Job? = null
@@ -74,6 +90,11 @@ class ConnectionLibraryScreenModel(
         .map { sourceId -> sourceId to ownerLabel(sourceId) }
         .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.second })
 
+    fun libraryKindOptions(): List<ConnectionLibraryKind> = allEntries
+        .mapNotNull { it.libraryKind }
+        .distinct()
+        .sortedBy { it.ordinal }
+
     fun invalidateDownloadCounts() {
         manualDownloadCounts.clear()
         if (mutableState.value.filters.needsDownloadCounts) applyQuery(mutableState.value.query, genreQuery)
@@ -99,11 +120,17 @@ class ConnectionLibraryScreenModel(
         refreshJob = screenModelScope.launch(Dispatchers.IO) {
             mutableState.update { it.copy(isLoading = true, error = null) }
             try {
-                val entries = mangaRepository.getAggregatedConnectionLibraryEntries(sourceManager)
+                val entries = filterConnectionLibraryEntriesByKind(
+                    mangaRepository.getAggregatedConnectionLibraryEntries(sourceManager),
+                    allowedLibraryKinds,
+                )
+                if (generation != refreshGeneration) return@launch
+                val chapterProgress = loadChapterProgress(entries)
                 if (generation != refreshGeneration) return@launch
                 allEntries = entries
-                manualDownloadCounts.clear()
+                chaptersByMangaId = chapterProgress
                 mutableState.update { it.copy(isLoading = false) }
+                manualDownloadCounts.clear()
                 applyQuery(mutableState.value.query, genreQuery)
             } catch (error: CancellationException) {
                 throw error

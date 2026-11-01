@@ -10,8 +10,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.merge
 
+enum class ConnectionLibraryKind { LOCAL, WEBDAV, SMB, SERVER, UNKNOWN }
+
 interface ConnectionSource : Source {
     val connectionProfile: LibraryConnectionProfile
+
+    val libraryKind: ConnectionLibraryKind
+        get() = ConnectionLibraryKind.UNKNOWN
 
     val providerId: String
         get() = connectionProfile.providerId

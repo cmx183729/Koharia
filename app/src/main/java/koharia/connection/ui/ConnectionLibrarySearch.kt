@@ -2,6 +2,7 @@ package koharia.connection.ui
 
 import eu.kanade.tachiyomi.source.model.SManga
 import koharia.connection.ConnectionLibraryEntry
+import koharia.connection.ConnectionLibraryKind
 
 enum class ConnectionLibrarySort {
     TITLE,
@@ -13,6 +14,7 @@ enum class ConnectionLibrarySort {
 
 data class ConnectionLibraryFilters(
     val ownerSourceId: Long? = null,
+    val libraryKind: ConnectionLibraryKind? = null,
     val favoritesOnly: Boolean = false,
     val completedOnly: Boolean = false,
     val downloadedOnly: Boolean = false,
@@ -20,7 +22,7 @@ data class ConnectionLibraryFilters(
     val ascending: Boolean = true,
 ) {
     val isActive: Boolean
-        get() = ownerSourceId != null || favoritesOnly || completedOnly || downloadedOnly ||
+        get() = ownerSourceId != null || libraryKind != null || favoritesOnly || completedOnly || downloadedOnly ||
             sort != ConnectionLibrarySort.TITLE || !ascending
 
     val needsDownloadCounts: Boolean
@@ -28,6 +30,13 @@ data class ConnectionLibraryFilters(
 
     val needsOwnerLabels: Boolean
         get() = sort == ConnectionLibrarySort.OWNER
+}
+
+internal fun filterConnectionLibraryEntriesByKind(
+    entries: List<ConnectionLibraryEntry>,
+    allowedLibraryKinds: Set<ConnectionLibraryKind>?,
+): List<ConnectionLibraryEntry> = entries.filter {
+    allowedLibraryKinds == null || it.libraryKind in allowedLibraryKinds
 }
 
 internal fun filterConnectionLibraryEntries(
@@ -61,6 +70,7 @@ internal fun transformConnectionLibraryEntries(
     val filtered = filterConnectionLibraryEntries(entries, query, genreQuery)
         .asSequence()
         .filter { filters.ownerSourceId == null || it.sourceId == filters.ownerSourceId }
+        .filter { filters.libraryKind == null || it.libraryKind == filters.libraryKind }
         .filter { !filters.favoritesOnly || it.manga.favorite }
         .filter { !filters.completedOnly || it.manga.status == SManga.COMPLETED.toLong() }
         .filter { !filters.downloadedOnly || manualDownloadCount(it) > 0 }

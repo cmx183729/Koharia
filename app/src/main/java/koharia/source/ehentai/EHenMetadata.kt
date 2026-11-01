@@ -167,5 +167,8 @@ object EHenTagTranslation {
         else -> 12
     }
 
-    private fun normalize(tag: String) = tag.trim().replace(Regex("\\s+"), " ").lowercase(Locale.ROOT)
+    private fun normalize(tag: String) = tag.trim()
+        .replace(Regex("\\s+"), " ")
+        .replace(Regex("\\s*:\\s*"), ": ")
+        .lowercase(Locale.ROOT)
 }

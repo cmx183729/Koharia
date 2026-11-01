@@ -23,6 +23,7 @@ import koharia.connection.ConnectionChapterMetadata
 import koharia.connection.ConnectionDownloadStorageAdapter
 import koharia.connection.ConnectionHealthAdapter
 import koharia.connection.ConnectionHistorySyncAdapter
+import koharia.connection.ConnectionLibraryMembershipAdapter
 import koharia.connection.ConnectionManagedLifecycle
 import koharia.connection.ConnectionMangaBehavior
 import koharia.connection.ConnectionMangaBehaviorAdapter
@@ -142,9 +143,11 @@ class KavitaSource(private val context: Context, override val connectionProfile:
     koharia.connection.ConnectionRemoteAnnotationsAdapter,
     koharia.connection.ConnectionRemoteBookmarksAdapter,
     koharia.connection.ConnectionDownloadAuthorizationAdapter,
+    ConnectionLibraryMembershipAdapter,
     AutoCloseable {
     override val id = connectionProfile.id
     override val name = connectionProfile.name
+    override val libraryKind = koharia.connection.ConnectionLibraryKind.SERVER
 
     override suspend fun textReplacementOwnerKey(): String = preferences.accountKey
 
@@ -503,6 +506,10 @@ class KavitaSource(private val context: Context, override val connectionProfile:
     override val usesSharedDownloadStorage = false
     override fun mergeShelfLocalState(remote: Manga, local: Manga?): Manga =
         koharia.connection.mergeShelfMangaMetadata(remote, local)
+
+    override suspend fun filterLibraryEntries(mangas: List<Manga>): List<Manga> = mangas.filter {
+        it.matchesKavitaLibraryMembership(id, preferences.accountKey, preferences.mediaId)
+    }
 
     override val mangaBehavior get() = ConnectionMangaBehavior(
         allowsChapterDownloads = preferences.capabilities.downloads,

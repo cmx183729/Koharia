@@ -24,6 +24,7 @@ class StorageBackupTest {
         val payload = StorageBackup(repository, Json).create(1, "account", "root")
         val restored = MemoryStorageRepository()
         StorageBackup(restored, Json).restore(2, "root", payload)
+        assertEquals(1, restored.putBatchCalls)
         val target = StorageRecordStore(StorageSession(2, "account", "root") { true }, restored, Json)
         val restoredIdentities = StorageResourceIdentities(backend, target)
         backend.failReads = true

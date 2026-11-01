@@ -151,23 +151,26 @@ internal class KomgaMetadataCacheStore(
 
     private fun MediaType?.orEmptyText() = this?.toString().orEmpty()
 
-    fun findLibraryId(contentUrl: String): String? {
-        val content = readJsonObject(contentUrl) ?: return null
-        return content.findLibraryId(contentUrl)
+    fun findLibraryId(contentUrl: String): String? = findLibraryId(contentUrl, namespace())
+
+    private fun findLibraryId(contentUrl: String, cacheNamespace: String): String? {
+        val content = readJsonObject(contentUrl, cacheNamespace) ?: return null
+        return content.findLibraryId(contentUrl, cacheNamespace)
     }
 
     fun findLibraryIds(contentUrl: String): Set<String> {
-        findLibraryId(contentUrl)?.let { return setOf(it) }
+        val cacheNamespace = namespace()
+        findLibraryId(contentUrl, cacheNamespace)?.let { return setOf(it) }
         if (!contentUrl.substringBefore('?').trimEnd('/').contains("$API_PATH/readlists/")) return emptySet()
 
         val booksUrl = contentUrl.trimEnd('/') + READ_LIST_BOOKS_QUERY
-        val books = readJsonObject(booksUrl)?.get(CONTENT_FIELD) as? JsonArray ?: return emptySet()
+        val books = readJsonObject(booksUrl, cacheNamespace)?.get(CONTENT_FIELD) as? JsonArray ?: return emptySet()
         return books.mapNotNullTo(linkedSetOf()) { element ->
-            runCatching { element.jsonObject.findLibraryId(contentUrl) }.getOrNull()
+            runCatching { element.jsonObject.findLibraryId(contentUrl, cacheNamespace) }.getOrNull()
         }
     }
 
-    private fun JsonObject.findLibraryId(contentUrl: String): String? {
+    private fun JsonObject.findLibraryId(contentUrl: String, cacheNamespace: String): String? {
         this[LIBRARY_ID_FIELD]?.jsonPrimitive?.contentOrNull
             ?.takeIf { it.isNotBlank() }
             ?.let { return it }
@@ -178,7 +181,7 @@ internal class KomgaMetadataCacheStore(
         val baseUrl = contentUrl.substringBefore(API_PATH, missingDelimiterValue = "")
         if (baseUrl.isBlank()) return null
 
-        return readJsonObject("$baseUrl$API_PATH/series/$seriesId")
+        return readJsonObject("$baseUrl$API_PATH/series/$seriesId", cacheNamespace)
             ?.get(LIBRARY_ID_FIELD)
             ?.jsonPrimitive
             ?.contentOrNull
@@ -186,15 +189,19 @@ internal class KomgaMetadataCacheStore(
     }
 
     private fun scopedIdentity(identity: String, request: Request? = null): String =
-        (
-            request?.tag(KomgaCacheNamespace::class.java)?.value?.takeIf {
-                it.isNotEmpty()
-            } ?: namespace()
-            ).takeIf { it.isNotEmpty() }
-            ?.let { "$it:$identity" } ?: identity
+        scopedIdentity(
+            identity,
+            request?.tag(KomgaCacheNamespace::class.java)?.value?.takeIf { it.isNotEmpty() } ?: namespace(),
+        )
 
-    private fun readJsonObject(url: String) = readEntry(scopedIdentity(url))
-        ?.let { entry -> runCatching { Json.parseToJsonElement(entry.body.decodeToString()).jsonObject }.getOrNull() }
+    private fun scopedIdentity(identity: String, cacheNamespace: String): String =
+        cacheNamespace.takeIf { it.isNotEmpty() }?.let { "$it:$identity" } ?: identity
+
+    private fun readJsonObject(url: String, cacheNamespace: String = namespace()) =
+        readEntry(scopedIdentity(url, cacheNamespace))
+            ?.let { entry ->
+                runCatching { Json.parseToJsonElement(entry.body.decodeToString()).jsonObject }.getOrNull()
+            }
 
     private fun readEntry(identity: String): CacheEntry? = synchronized(cacheLock) {
         val bodyFile = bodyFile(identity)

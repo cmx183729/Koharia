@@ -241,6 +241,49 @@ data class LocalLibraryIndex(
     }
 }
 
+internal data class LocalLibraryConfigSnapshot(
+    val config: LocalLibraryConfig,
+    val requiresPersistence: Boolean,
+)
+
+internal class LocalLibraryConfigCache(
+    private val json: Json,
+    private val sourceId: Long,
+) {
+    private var initialized = false
+    private var serialized: String? = null
+    private var snapshot = LocalLibraryConfigSnapshot(LocalLibraryConfig(), false)
+
+    @Synchronized
+    fun get(value: String?): LocalLibraryConfigSnapshot {
+        if (!initialized || value != serialized) {
+            val stored = value?.let { runCatching { json.decodeFromString<LocalLibraryConfig>(it) }.getOrNull() }
+                ?: LocalLibraryConfig()
+            val config = stored.migrate(
+                sourceId = sourceId,
+                inferConfiguredSetup = value != null &&
+                    !value.contains("\"setupCompleted\"") &&
+                    stored.roots.isNotEmpty(),
+            )
+            snapshot = LocalLibraryConfigSnapshot(
+                config = config,
+                requiresPersistence = config != stored ||
+                    (value != null && !value.contains("\"setupCompleted\"")),
+            )
+            serialized = value
+            initialized = true
+        }
+        return snapshot
+    }
+
+    @Synchronized
+    fun update(serialized: String, config: LocalLibraryConfig) {
+        snapshot = LocalLibraryConfigSnapshot(config, false)
+        this.serialized = serialized
+        initialized = true
+    }
+}
+
 internal class LocalLibraryIndexCache(private val json: Json) {
     private var serialized: String? = null
     private var index = LocalLibraryIndex()
@@ -299,23 +342,14 @@ class LocalLibraryPreferences(
     private val json: Json,
     private val preferences: SharedPreferences = sourcePreferences("source_$sourceId"),
 ) {
+    private val configCache = LocalLibraryConfigCache(json, sourceId)
     private val indexCache = LocalLibraryIndexCache(json)
 
-    fun getConfig(): LocalLibraryConfig {
+    fun getConfig(): LocalLibraryConfig = synchronized(preferences) {
         val storedValue = preferences.getString(KEY_CONFIG, null)
-        val stored = storedValue
-            ?.let { runCatching { json.decodeFromString<LocalLibraryConfig>(it) }.getOrNull() }
-            ?: LocalLibraryConfig()
-        val migrated = stored.migrate(
-            sourceId = sourceId,
-            inferConfiguredSetup = storedValue != null &&
-                !storedValue.contains("\"setupCompleted\"") &&
-                stored.roots.isNotEmpty(),
-        )
-        if (migrated != stored || (storedValue != null && !storedValue.contains("\"setupCompleted\""))) {
-            setConfig(migrated)
-        }
-        return migrated
+        val snapshot = configCache.get(storedValue)
+        if (snapshot.requiresPersistence) setConfig(snapshot.config)
+        snapshot.config
     }
 
     fun setConfig(config: LocalLibraryConfig) = synchronized(preferences) {
@@ -329,8 +363,10 @@ class LocalLibraryPreferences(
             bookshelves = config.bookshelves.map { shelf ->
                 lockedModes[shelf.id]?.let { shelf.copy(organizationMode = it) } ?: shelf
             },
-        )
-        preferences.edit().putString(KEY_CONFIG, json.encodeToString(modeSafeConfig.migrate(sourceId))).apply()
+        ).migrate(sourceId)
+        val serialized = json.encodeToString(modeSafeConfig)
+        preferences.edit().putString(KEY_CONFIG, serialized).apply()
+        configCache.update(serialized, modeSafeConfig)
     }
 
     internal fun coverMaintenanceConfig(): LocalLibraryConfig? = synchronized(preferences) {

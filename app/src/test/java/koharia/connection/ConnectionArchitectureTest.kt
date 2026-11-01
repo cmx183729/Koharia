@@ -381,7 +381,7 @@ class ConnectionArchitectureTest {
         assertTrue(behavior.usesCacheTerminology)
         assertTrue(behavior.supportsChapterCoverGrid)
         assertTrue(behavior.allowsChapterDownloads)
-        assertFalse(behavior.providerManagedLibrary)
+        assertTrue(behavior.providerManagedLibrary)
         assertFalse(behavior.allowsLocalLibraryManagement)
         assertFalse(behavior.allowsCategoryManagement)
         assertFalse(behavior.allowsFetchIntervalManagement)
@@ -391,6 +391,25 @@ class ConnectionArchitectureTest {
         val localBehavior = LocalFolderSource.MANGA_BEHAVIOR
         assertFalse(localBehavior.allowsChapterDownloads)
         assertTrue(localBehavior.providerManagedLibrary)
+    }
+
+    @Test
+    fun `source library kinds are explicit and local storage mode remains dynamic`() {
+        val profile = LibraryConnectionProfile(id = 91L, providerId = "test", name = "test")
+        assertEquals(ConnectionLibraryKind.UNKNOWN, TestConnectionSource(profile).libraryKind)
+
+        assertEquals(
+            ConnectionLibraryKind.LOCAL,
+            koharia.source.local.localLibraryKind(koharia.storage.LibraryStorageMode.LOCAL),
+        )
+        assertEquals(
+            ConnectionLibraryKind.WEBDAV,
+            koharia.source.local.localLibraryKind(koharia.storage.LibraryStorageMode.WEBDAV),
+        )
+        assertEquals(
+            ConnectionLibraryKind.SMB,
+            koharia.source.local.localLibraryKind(koharia.storage.LibraryStorageMode.SMB),
+        )
     }
 
     @Test

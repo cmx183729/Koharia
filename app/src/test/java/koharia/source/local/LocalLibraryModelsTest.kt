@@ -9,12 +9,71 @@ import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNotSame
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import tachiyomi.domain.chapter.model.Chapter
 
 class LocalLibraryModelsTest {
+
+    @Test
+    fun `local config cache reuses normalized snapshot until stored value changes`() {
+        val cache = LocalLibraryConfigCache(Json, sourceId = 7L)
+        val stored = Json.encodeToString(
+            LocalLibraryConfig(
+                enabledContentTypes = setOf(LocalLibraryContentType.COMICS),
+                setupCompleted = true,
+            ).migrate(sourceId = 7L),
+        )
+
+        val first = cache.get(stored)
+        val second = cache.get(stored)
+
+        assertSame(first, second)
+        assertSame(first.config, second.config)
+        assertFalse(first.requiresPersistence)
+
+        val normalized = Json.encodeToString(first.config)
+        cache.update(normalized, first.config)
+        val cachedAfterPersistence = cache.get(normalized)
+        assertFalse(cachedAfterPersistence.requiresPersistence)
+        assertSame(first.config, cachedAfterPersistence.config)
+
+        val changed = Json.encodeToString(
+            LocalLibraryConfig(
+                enabledContentTypes = setOf(LocalLibraryContentType.BOOKS),
+                setupCompleted = true,
+            ),
+        )
+        val updated = cache.get(changed)
+
+        assertNotSame(first, updated)
+        assertEquals(setOf(LocalLibraryContentType.BOOKS), updated.config.enabledContentTypes)
+    }
+
+    @Test
+    fun `local config cache flags legacy normalization for one-time persistence`() {
+        val cache = LocalLibraryConfigCache(Json, sourceId = 12L)
+        val legacy = Json.encodeToString(
+            LocalLibraryConfig(
+                treeUri = "content://library",
+                displayPath = "Library",
+                contentType = LocalLibraryContentType.COMICS,
+                layout = LocalLibraryLayout.COMPATIBLE,
+                schemaVersion = 1,
+            ),
+        )
+
+        val first = cache.get(legacy)
+        val second = cache.get(legacy)
+
+        assertSame(first, second)
+        assertTrue(first.requiresPersistence)
+        assertTrue(first.config.setupCompleted)
+        assertEquals(7, first.config.schemaVersion)
+    }
 
     @Test
     fun `folder containers are not classifiable while virtual image series are`() {

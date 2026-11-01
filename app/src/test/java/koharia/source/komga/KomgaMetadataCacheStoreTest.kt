@@ -69,6 +69,33 @@ class KomgaMetadataCacheStoreTest {
     }
 
     @Test
+    fun `read list library lookup ignores entries from another cache namespace`() {
+        var selectedNamespace = "account-a"
+        val store = KomgaMetadataCacheStore(context()) { selectedNamespace }
+        val readListUrl = "https://komga.test/api/v1/readlists/read-list-id"
+        val booksUrl = "$readListUrl/books?unpaged=true&media_status=READY&deleted=false"
+        val seriesUrl = "https://komga.test/api/v1/series/series-a"
+
+        fun save(url: String, namespace: String, body: String) {
+            val request = Request.Builder()
+                .url(url)
+                .tag(KomgaCacheNamespace::class.java, KomgaCacheNamespace(namespace))
+                .build()
+            store.save(request, response(request, body)).close()
+        }
+
+        save(booksUrl, "account-a", """{"content":[{"seriesId":"series-a"}]}""")
+        save(seriesUrl, "account-a", """{"libraryId":"library-a"}""")
+
+        selectedNamespace = "account-b"
+        assertEquals(emptySet<String>(), store.findLibraryIds(readListUrl))
+
+        save(booksUrl, "account-b", """{"content":[{"seriesId":"series-a"}]}""")
+        save(seriesUrl, "account-b", """{"libraryId":"library-b"}""")
+        assertEquals(setOf("library-b"), store.findLibraryIds(readListUrl))
+    }
+
+    @Test
     fun `malformed read list books cache has no library membership`() {
         val store = KomgaMetadataCacheStore(context())
         val readListUrl = "https://komga.test/api/v1/readlists/read-list-id"

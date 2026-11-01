@@ -51,6 +51,54 @@ class LocalImageFolderPolicyTest {
     }
 
     @Test
+    fun `pure image folders reuse classified image identities when filtering candidates`() {
+        val imageUri = mockk<Uri>()
+        val archiveUri = mockk<Uri>()
+        val image = LocalScanFile(
+            file = mockk { every { uri } returns imageUri },
+            name = "page.jpg",
+            directory = false,
+            sizeBytes = 42,
+            modifiedAt = 0,
+        )
+        val archive = LocalScanFile(
+            file = mockk { every { uri } returns archiveUri },
+            name = "bonus.cbz",
+            directory = false,
+            sizeBytes = 42,
+            modifiedAt = 0,
+        )
+
+        assertFalse(
+            shouldIncludeLocalFolderEntry(
+                entry = image,
+                supportedExtensions = setOf("jpg", "cbz"),
+                pureImages = true,
+                imageSeriesEnabled = true,
+                imageUris = setOf(imageUri),
+            ),
+        )
+        assertTrue(
+            shouldIncludeLocalFolderEntry(
+                entry = archive,
+                supportedExtensions = setOf("jpg", "cbz"),
+                pureImages = true,
+                imageSeriesEnabled = true,
+                imageUris = setOf(imageUri),
+            ),
+        )
+        assertTrue(
+            shouldIncludeLocalFolderEntry(
+                entry = image,
+                supportedExtensions = setOf("jpg", "cbz"),
+                pureImages = false,
+                imageSeriesEnabled = true,
+                imageUris = setOf(imageUri),
+            ),
+        )
+    }
+
+    @Test
     fun `500 remote pages reuse one listing without per-page record decoding`() {
         val context = mockk<Context>()
         val runtime = mockk<NetworkStorageRuntime>()

@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.util.storage.DiskUtil
+import koharia.connection.distinctConnectionLibraryManga
 import koharia.connection.providerManagedLibrarySourceIds
 import koharia.source.local.LocalFolderSource
 import kotlinx.coroutines.CancellationException
@@ -62,7 +63,7 @@ class CustomCoverStore(
     internal suspend fun migrateLegacyCovers() {
         val providerManaged = sourceManager.providerManagedLibrarySourceIds()
             .flatMap { mangaRepository.getMangaBySourceId(it) }
-        migrate((mangaRepository.getFavorites() + providerManaged).distinctBy(Manga::id))
+        migrate(distinctConnectionLibraryManga(mangaRepository.getFavorites() + providerManaged))
     }
 
     suspend fun open(mangaId: Long, sourceId: Long): InputStream? {

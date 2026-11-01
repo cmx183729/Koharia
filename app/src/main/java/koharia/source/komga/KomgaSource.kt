@@ -29,6 +29,7 @@ import koharia.connection.ConnectionEpubHistorySyncAdapter
 import koharia.connection.ConnectionEpubProgressAdapter
 import koharia.connection.ConnectionHealthAdapter
 import koharia.connection.ConnectionHistorySyncAdapter
+import koharia.connection.ConnectionLibraryMembershipAdapter
 import koharia.connection.ConnectionMangaBehavior
 import koharia.connection.ConnectionMangaBehaviorAdapter
 import koharia.connection.ConnectionMangaProgressAdapter
@@ -125,7 +126,10 @@ class KomgaSource(
     koharia.connection.ConnectionDownloadAliasAdapter,
     koharia.connection.ConnectionSeriesActionsAdapter,
     koharia.connection.ConnectionReadingQueueAdapter,
-    koharia.connection.ConnectionDownloadAuthorizationAdapter {
+    koharia.connection.ConnectionDownloadAuthorizationAdapter,
+    ConnectionLibraryMembershipAdapter {
+
+    override val libraryKind = koharia.connection.ConnectionLibraryKind.SERVER
 
     override val organizationPages = koharia.connection.ConnectionOrganizationPage.entries.toSet()
 
@@ -265,7 +269,7 @@ class KomgaSource(
     // PDF renderer while still keeping a visible double-page spread responsive.
     override val pageLoadConcurrency: Int = 2
     override fun mergeShelfLocalState(remote: Manga, local: Manga?): Manga =
-        mergeKomgaShelfManga(remote, local)
+        mergeKomgaShelfManga(remote, local, shelfCacheNamespace())
 
     override val mangaBehavior = MANGA_BEHAVIOR
     override val allowsUnvalidatedNetwork: Boolean = true
@@ -379,9 +383,14 @@ class KomgaSource(
     }
     private val browseRefreshRequestedAt = AtomicLong(0L)
 
-    fun shelfCacheNamespace(): String = java.security.MessageDigest.getInstance("SHA-256")
-        .digest("$id|$baseUrl|$authMode|$username|$password|$apiKey".toByteArray())
-        .joinToString("") { "%02x".format(it) }
+    fun shelfCacheNamespace(): String = komgaShelfCacheNamespace(
+        id,
+        baseUrl,
+        authMode,
+        username,
+        password,
+        apiKey,
+    )
 
     fun currentHeaders(): Headers = headersBuilder().build()
 
@@ -1635,6 +1644,14 @@ class KomgaSource(
 
     fun findCachedLibraryIds(contentUrl: String): Set<String> = metadataCacheStore.findLibraryIds(contentUrl)
 
+    override suspend fun filterLibraryEntries(mangas: List<Manga>): List<Manga> {
+        val namespace = shelfCacheNamespace()
+        val configuredLibraryIds = configuredShelfLibraryIds()
+        return mangas.filter { manga ->
+            manga.matchesKomgaLibraryMembership(configuredLibraryIds, namespace)
+        }
+    }
+
     fun registerServerSettingsChangeListener(
         onChanged: (shelfLibrariesChanged: Boolean) -> Unit,
     ): SharedPreferences.OnSharedPreferenceChangeListener {
@@ -1794,6 +1811,7 @@ class KomgaSource(
         internal val MANGA_BEHAVIOR = ConnectionMangaBehavior(
             usesCacheTerminology = true,
             supportsChapterCoverGrid = true,
+            providerManagedLibrary = true,
             allowsLocalLibraryManagement = false,
             allowsFetchIntervalManagement = false,
             showSourceName = false,

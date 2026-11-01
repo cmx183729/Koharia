@@ -19,6 +19,7 @@ import eu.kanade.tachiyomi.data.backup.models.BackupPreference
 import eu.kanade.tachiyomi.data.backup.models.BackupSource
 import eu.kanade.tachiyomi.data.backup.models.BackupSourcePreferences
 import eu.kanade.tachiyomi.data.backup.models.KohariaBackupEnvelope
+import koharia.connection.distinctConnectionLibraryManga
 import koharia.connection.getProviderManagedLibraryEntries
 import kotlinx.serialization.protobuf.ProtoBuf
 import logcat.LogPriority
@@ -79,8 +80,9 @@ class BackupCreator(
 
             val nonFavoriteManga = if (options.readEntries) mangaRepository.getReadMangaNotInLibrary() else emptyList()
             val providerManagedManga = mangaRepository.getProviderManagedLibraryEntries(sourceManager)
-            val mangaToBackUp = (getFavorites.await() + nonFavoriteManga + providerManagedManga)
-                .distinctBy(Manga::id)
+            val mangaToBackUp = distinctConnectionLibraryManga(
+                getFavorites.await() + nonFavoriteManga + providerManagedManga,
+            )
             // Chapter flags and explicit intents must describe the same committed reading state.
             val (backupManga, progressJournal) = Injekt.get<tachiyomi.data.Database>().transactionWithResult {
                 val mangas = backupMangas(mangaToBackUp, options)

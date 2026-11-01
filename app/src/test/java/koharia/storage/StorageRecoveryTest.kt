@@ -2,6 +2,7 @@ package koharia.storage
 
 import koharia.domain.storage.LibraryStorageRepository
 import koharia.domain.storage.StorageRecord
+import koharia.domain.storage.StorageRecordBatchEntry
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -27,6 +28,31 @@ class StorageRecoveryTest {
         assertTrue(StorageSnapshot(backend, records).cachedEntry("Comics")?.directory == true)
         records.put("directories", "", StorageDirectorySnapshot(StorageEntry("", true), emptyList(), Long.MAX_VALUE))
         assertEquals(null, snapshot.cachedEntry("Comics"))
+    }
+
+    @Test fun `child refresh wins when parent and child use the same clock value`() = runBlocking {
+        val memory = MemoryStorageBackend().apply { directories += "child" }
+        var childVersion = "old"
+        val backend = object : LibraryStorageBackend by memory {
+            override suspend fun stat(path: String): StorageEntry =
+                if (path == "child") StorageEntry(path, directory = true, version = childVersion) else memory.stat(path)
+
+            override suspend fun list(path: String): List<StorageEntry> =
+                if (path.isEmpty()) {
+                    listOf(
+                        StorageEntry("child", directory = true, version = childVersion),
+                    )
+                } else {
+                    memory.list(path)
+                }
+        }
+        val snapshot = StorageSnapshot(backend, store(), clock = { 100L })
+        snapshot.directory("")
+        childVersion = "new"
+        val child = snapshot.directory("child", refresh = true)
+
+        assertEquals(child.directory, snapshot.cachedEntry("child"))
+        assertEquals("new", snapshot.cachedEntry("child")?.version)
     }
 
     @Test fun `native directory move without native identifiers recovers a lost response`() = runBlocking {
@@ -137,6 +163,29 @@ class StorageRecoveryTest {
         assertEquals(listOf("", "books"), requests.takeLast(2))
     }
 
+    @Test fun `refresh scan reduces checkpoint writes for large directory trees`() = runBlocking {
+        val backend = MemoryStorageBackend().apply {
+            directories += setOf("books") + (1..20).map { "books/$it" }
+        }
+        val repository = MemoryStorageRepository()
+        val snapshot =
+            StorageSnapshot(
+                backend,
+                StorageRecordStore(
+                    StorageSession(1, "account", "root") {
+                        true
+                    },
+                    repository,
+                    Json,
+                ),
+            )
+
+        snapshot.scan("", refresh = true)
+
+        assertFalse(snapshot.hasPendingScan())
+        assertEquals(24, repository.putCalls)
+    }
+
     @Test fun `copy fallback recovers a lost response before deleting the source`() = runBlocking {
         val memory = MemoryStorageBackend().apply {
             seed("source", "original")
@@ -191,6 +240,8 @@ class StorageRecoveryTest {
 
 internal class MemoryStorageRepository : LibraryStorageRepository {
     var afterSnapshotRead: suspend (String, String) -> Unit = { _, _ -> }
+    var putCalls = 0
+    var putBatchCalls = 0
     override fun observeNamespace(connection: Long, account: String, root: String, namespace: String) =
         kotlinx.coroutines.flow.flow { emit(list(connection, account, root, namespace)) }
 
@@ -230,9 +281,27 @@ internal class MemoryStorageRepository : LibraryStorageRepository {
         record: StorageRecord,
         checkActive: () -> Unit,
     ) {
+        putCalls++
         checkActive()
         values[key(connection, account, root, namespace, record.key)] = record
     }
+    override suspend fun putBatch(
+        connection: Long,
+        account: String,
+        root: String,
+        entries: List<StorageRecordBatchEntry>,
+        checkActive: () -> Unit,
+    ) {
+        require(entries.isNotEmpty())
+        require(entries.map { it.namespace to it.record.key }.distinct().size == entries.size)
+        putBatchCalls++
+        checkActive()
+        entries.forEach { entry ->
+            values[key(connection, account, root, entry.namespace, entry.record.key)] = entry.record
+        }
+        checkActive()
+    }
+
     override suspend fun remove(
         connection: Long,
         account: String,

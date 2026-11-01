@@ -40,7 +40,7 @@ internal class StorageCacheIndex private constructor(val root: File) {
     }
 
     fun acquire(directory: File): Closeable = lock.withLock {
-        val path = directory.path
+        val path = directory.canonicalPath
         leases[path] = (leases[path] ?: 0) + 1
         var closed = false
         Closeable {
