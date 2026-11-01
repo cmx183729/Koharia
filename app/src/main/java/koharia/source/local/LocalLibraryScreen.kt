@@ -299,8 +299,11 @@ data class LocalLibraryScreen(
         }
 
         val isRefreshing = state.isRefreshing || sourceId in backgroundRefreshes
+        // A background scan already shows its progress by adding entries live. Keeping the pull
+        // indicator bound to it leaves a spinner pinned over a usable library for the whole scan,
+        // so only an explicit refresh from this screen drives it.
         val pullRefreshState = rememberPullRefreshState(
-            refreshing = isRefreshing,
+            refreshing = state.isRefreshing,
             onRefresh = screenModel::refresh,
         )
         val navigateUp: () -> Unit = { navigator.pop() }
@@ -677,7 +680,7 @@ data class LocalLibraryScreen(
                     }
 
                     PullRefreshIndicator(
-                        refreshing = isRefreshing,
+                        refreshing = state.isRefreshing,
                         state = pullRefreshState,
                         modifier = Modifier
                             .align(Alignment.TopCenter)
