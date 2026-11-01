@@ -2546,7 +2546,7 @@
     <string name="local_library_scan_progress_indexing">Importing %1$d / %2$d</string>
     <string name="local_library_scan_progress_finishing">Saving the library…</string>
     <string name="local_library_section_structure">Library structure</string>
-    <string name="local_library_section_metadata">Metadata</string>
+    <string name="local_library_section_metadata">Naming and metadata</string>
     <string name="local_library_section_scanning">Scanning</string>
     <string name="local_library_scan_listing_concurrency">Folder listing concurrency</string>
     <string name="local_library_scan_listing_concurrency_summary">How many folders a scan reads at once. Every listing is one round trip to the storage provider, so a network share needs fewer than a local folder.</string>
@@ -2554,7 +2554,7 @@
     <string name="local_library_scan_metadata_concurrency_summary">How many entries a scan reads metadata for at the same time.</string>
     <string name="local_library_scan_preview_interval">Remote preview interval</string>
     <string name="local_library_scan_preview_interval_summary">Milliseconds between list updates while a network scan runs. Larger values trade live feedback for less repeated work.</string>
-    <string name="local_library_skip_empty_entries">Skip empty entries</string>
-    <string name="local_library_skip_empty_entries_summary">Do not import an entry when every image inside it is empty.</string>
+    <string name="local_library_skip_empty_entries">Skip entries with no readable image</string>
+    <string name="local_library_skip_empty_entries_summary">An entry is not imported when it holds no archive or book file and none of its images has any content, so folders that were never downloaded do not reach the shelf.</string>
     <string name="local_library_content_type_locked">Remove its bookshelves first</string>
 </resources>

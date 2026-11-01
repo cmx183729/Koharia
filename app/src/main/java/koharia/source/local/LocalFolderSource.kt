@@ -3080,15 +3080,17 @@ class LocalFolderSource(
     }
 
     /**
-     * True when every image reachable from [chapterFiles] is empty, so importing the entry would
-     * only produce a manga with no readable page. An entry without any image is not empty: it may
-     * still carry an archive, a book or sidecar metadata.
+     * True when the entry holds nothing the reader could open: no readable archive or book file, and
+     * no image that carries bytes. Both halves matter. A folder whose images were never downloaded
+     * imports as a manga with blank pages, and a folder with no images at all imports as a manga
+     * with no pages; neither is worth a shelf slot. Sidecar metadata alone does not make it readable.
      */
     private fun scanIsEmptyEntry(
         chapterFiles: List<UniFile>,
         reader: LocalScanDirectoryReader,
     ): Boolean {
         val images = mutableListOf<LocalScanFile>()
+        var readableDocument = false
         var pending = chapterFiles
         var depth = 0
         while (pending.isNotEmpty() && depth < SCAN_EMPTY_ENTRY_MAX_DEPTH) {
@@ -3100,12 +3102,17 @@ class LocalFolderSource(
                     nested += reader.list(file).map { it.file }
                 } else if (attribute.extension in LocalMediaFormats.images.extensions) {
                     images += attribute
+                } else if (attribute.extension in SCAN_READABLE_DOCUMENT_EXTENSIONS &&
+                    attribute.sizeBytes > 0L
+                ) {
+                    readableDocument = true
                 }
             }
             pending = nested
             depth++
         }
-        return images.isNotEmpty() && images.all { it.sizeBytes <= 0L }
+        if (readableDocument) return false
+        return images.all { it.sizeBytes <= 0L }
     }
 
     private fun supportedExtensions(contentType: LocalLibraryContentType): Set<String> = when (contentType) {
@@ -3783,6 +3790,13 @@ class LocalFolderSource(
 
         /** How deep the empty-entry probe walks below a chapter file before giving up. */
         private const val SCAN_EMPTY_ENTRY_MAX_DEPTH = 2
+
+        /**
+         * Extensions that make an entry worth importing on their own, without any image beside them.
+         * Anything else in a folder — sidecars, markers, thumbnails — leaves the entry empty.
+         */
+        private val SCAN_READABLE_DOCUMENT_EXTENSIONS =
+            LocalMediaFormats.archives.extensions + LocalMediaFormats.bookExtensions
     }
 
     private data class ScanCandidate(

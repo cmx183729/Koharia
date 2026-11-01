@@ -2408,7 +2408,7 @@
     <string name="local_library_scan_progress_indexing">正在入库 %1$d / %2$d</string>
     <string name="local_library_scan_progress_finishing">正在保存索引…</string>
     <string name="local_library_section_structure">书库结构</string>
-    <string name="local_library_section_metadata">元数据</string>
+    <string name="local_library_section_metadata">命名与元数据</string>
     <string name="local_library_section_scanning">扫描</string>
     <string name="local_library_scan_listing_concurrency">目录列举并发</string>
     <string name="local_library_scan_listing_concurrency_summary">一次扫描同时读取多少个目录。每次列举都是一次存储提供方往返，网络共享应低于本地目录。</string>
@@ -2416,7 +2416,7 @@
     <string name="local_library_scan_metadata_concurrency_summary">一次扫描同时读取多少个条目的元数据。</string>
     <string name="local_library_scan_preview_interval">远程预览刷新间隔</string>
     <string name="local_library_scan_preview_interval_summary">网络扫描进行时列表刷新的毫秒间隔。数值越大，实时反馈越少但重复工作越省。</string>
-    <string name="local_library_skip_empty_entries">跳过空条目</string>
-    <string name="local_library_skip_empty_entries_summary">条目内所有图片都为空时不再入库。</string>
+    <string name="local_library_skip_empty_entries">跳过没有可用图片的条目</string>
+    <string name="local_library_skip_empty_entries_summary">条目里既没有压缩包或电子书，图片也全都没有内容时不再入库，所以从没下载过的文件夹不会出现在书架上。</string>
     <string name="local_library_content_type_locked">请先删除该类型的书架</string>
 </resources>

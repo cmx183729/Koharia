@@ -807,6 +807,98 @@ class LocalFolderSettingsScreen(
                             )
                         }
                     }
+                    if (config.setupCompleted) {
+                        item {
+                            PreferenceGroupHeader(title = stringResource(MR.strings.local_library_section_metadata))
+                        }
+                        item {
+                            TextPreferenceWidget(
+                                title = stringResource(MR.strings.local_library_metadata_storage),
+                                subtitle = metadataLabel(context, config.metadataStorage),
+                                enabled = canChangeMetadataStorage(config.setupCompleted),
+                            )
+                        }
+                        item {
+                            val pattern = config.titlePurgeRegex
+                            val patternInvalid = pattern.isNotBlank() && runCatching { Regex(pattern) }.isFailure
+                            OutlinedTextField(
+                                value = pattern,
+                                onValueChange = { config = config.copy(titlePurgeRegex = it) },
+                                label = { Text(stringResource(MR.strings.local_library_title_purge)) },
+                                placeholder = {
+                                    Text(stringResource(MR.strings.local_library_title_purge_placeholder))
+                                },
+                                singleLine = true,
+                                enabled = !isSaving,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                                isError = patternInvalid,
+                                supportingText = {
+                                    Text(
+                                        stringResource(
+                                            if (patternInvalid) {
+                                                MR.strings.local_library_title_purge_invalid
+                                            } else {
+                                                MR.strings.local_library_title_purge_summary
+                                            },
+                                        ),
+                                    )
+                                },
+                            )
+                        }
+                        item {
+                            PreferenceGroupHeader(title = stringResource(MR.strings.local_library_section_scanning))
+                        }
+                        item {
+                            ScanSliderRow(
+                                title = stringResource(MR.strings.local_library_scan_listing_concurrency),
+                                summary = stringResource(MR.strings.local_library_scan_listing_concurrency_summary),
+                                value = config.scanListingConcurrency,
+                                range = SCAN_CONCURRENCY_RANGE,
+                                enabled = !isSaving,
+                                onValueChange = { config = config.copy(scanListingConcurrency = it) },
+                            )
+                        }
+                        item {
+                            ScanSliderRow(
+                                title = stringResource(MR.strings.local_library_scan_metadata_concurrency),
+                                summary = stringResource(MR.strings.local_library_scan_metadata_concurrency_summary),
+                                value = config.scanMetadataConcurrency,
+                                range = SCAN_CONCURRENCY_RANGE,
+                                enabled = !isSaving,
+                                onValueChange = { config = config.copy(scanMetadataConcurrency = it) },
+                            )
+                        }
+                        item {
+                            ScanSliderRow(
+                                title = stringResource(MR.strings.local_library_scan_preview_interval),
+                                summary = stringResource(MR.strings.local_library_scan_preview_interval_summary),
+                                value = config.scanPreviewIntervalMs,
+                                range = SCAN_PREVIEW_INTERVAL_RANGE,
+                                step = LocalLibraryConfig.SCAN_PREVIEW_INTERVAL_STEP_MS,
+                                enabled = !isSaving,
+                                onValueChange = { config = config.copy(scanPreviewIntervalMs = it) },
+                            )
+                        }
+                        item {
+                            ListItem(
+                                modifier = Modifier.toggleable(
+                                    value = config.skipEmptyEntries,
+                                    enabled = !isSaving,
+                                    role = Role.Switch,
+                                    onValueChange = { config = config.copy(skipEmptyEntries = it) },
+                                ),
+                                headlineContent = {
+                                    Text(stringResource(MR.strings.local_library_skip_empty_entries))
+                                },
+                                supportingContent = {
+                                    Text(stringResource(MR.strings.local_library_skip_empty_entries_summary))
+                                },
+                                leadingContent = {
+                                    Switch(checked = config.skipEmptyEntries, onCheckedChange = null)
+                                },
+                            )
+                        }
+                    }
                     if (config.setupCompleted || setupStep == LocalLibrarySetupStep.LIBRARIES) {
                         if (!config.setupCompleted) {
                             item {
@@ -988,98 +1080,7 @@ class LocalFolderSettingsScreen(
                             }
                         }
                     }
-                    if (config.setupCompleted) {
-                        item {
-                            PreferenceGroupHeader(title = stringResource(MR.strings.local_library_section_metadata))
-                        }
-                        item {
-                            TextPreferenceWidget(
-                                title = stringResource(MR.strings.local_library_metadata_storage),
-                                subtitle = metadataLabel(context, config.metadataStorage),
-                                enabled = canChangeMetadataStorage(config.setupCompleted),
-                            )
-                        }
-                        item {
-                            val pattern = config.titlePurgeRegex
-                            val patternInvalid = pattern.isNotBlank() && runCatching { Regex(pattern) }.isFailure
-                            OutlinedTextField(
-                                value = pattern,
-                                onValueChange = { config = config.copy(titlePurgeRegex = it) },
-                                label = { Text(stringResource(MR.strings.local_library_title_purge)) },
-                                placeholder = {
-                                    Text(stringResource(MR.strings.local_library_title_purge_placeholder))
-                                },
-                                singleLine = true,
-                                enabled = !isSaving,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                                isError = patternInvalid,
-                                supportingText = {
-                                    Text(
-                                        stringResource(
-                                            if (patternInvalid) {
-                                                MR.strings.local_library_title_purge_invalid
-                                            } else {
-                                                MR.strings.local_library_title_purge_summary
-                                            },
-                                        ),
-                                    )
-                                },
-                            )
-                        }
-                        item {
-                            PreferenceGroupHeader(title = stringResource(MR.strings.local_library_section_scanning))
-                        }
-                        item {
-                            ScanSliderRow(
-                                title = stringResource(MR.strings.local_library_scan_listing_concurrency),
-                                summary = stringResource(MR.strings.local_library_scan_listing_concurrency_summary),
-                                value = config.scanListingConcurrency,
-                                range = SCAN_CONCURRENCY_RANGE,
-                                enabled = !isSaving,
-                                onValueChange = { config = config.copy(scanListingConcurrency = it) },
-                            )
-                        }
-                        item {
-                            ScanSliderRow(
-                                title = stringResource(MR.strings.local_library_scan_metadata_concurrency),
-                                summary = stringResource(MR.strings.local_library_scan_metadata_concurrency_summary),
-                                value = config.scanMetadataConcurrency,
-                                range = SCAN_CONCURRENCY_RANGE,
-                                enabled = !isSaving,
-                                onValueChange = { config = config.copy(scanMetadataConcurrency = it) },
-                            )
-                        }
-                        item {
-                            ScanSliderRow(
-                                title = stringResource(MR.strings.local_library_scan_preview_interval),
-                                summary = stringResource(MR.strings.local_library_scan_preview_interval_summary),
-                                value = config.scanPreviewIntervalMs,
-                                range = SCAN_PREVIEW_INTERVAL_RANGE,
-                                step = LocalLibraryConfig.SCAN_PREVIEW_INTERVAL_STEP_MS,
-                                enabled = !isSaving,
-                                onValueChange = { config = config.copy(scanPreviewIntervalMs = it) },
-                            )
-                        }
-                        item {
-                            ListItem(
-                                modifier = Modifier.toggleable(
-                                    value = config.skipEmptyEntries,
-                                    enabled = !isSaving,
-                                    role = Role.Switch,
-                                    onValueChange = { config = config.copy(skipEmptyEntries = it) },
-                                ),
-                                headlineContent = {
-                                    Text(stringResource(MR.strings.local_library_skip_empty_entries))
-                                },
-                                supportingContent = {
-                                    Text(stringResource(MR.strings.local_library_skip_empty_entries_summary))
-                                },
-                                leadingContent = {
-                                    Switch(checked = config.skipEmptyEntries, onCheckedChange = null)
-                                },
-                            )
-                        }
-                    } else if (setupStep == LocalLibrarySetupStep.LIBRARIES) {
+                    if (!config.setupCompleted && setupStep == LocalLibrarySetupStep.LIBRARIES) {
                         item {
                             SetupNavigation(
                                 enabled = !isSaving && !isPreparingDirectories,
@@ -1088,7 +1089,7 @@ class LocalFolderSettingsScreen(
                                 nextEnabled = validShelves && defaultModesChosen,
                             )
                         }
-                    } else if (setupStep == LocalLibrarySetupStep.METADATA) {
+                    } else if (!config.setupCompleted && setupStep == LocalLibrarySetupStep.METADATA) {
                         item { SetupNotice(stringResource(MR.strings.local_library_setup_metadata_summary)) }
                         items(LocalMetadataStorage.entries) { storage ->
                             MetadataStorageOption(
