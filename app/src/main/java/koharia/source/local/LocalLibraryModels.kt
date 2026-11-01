@@ -299,6 +299,26 @@ internal class LocalLibraryIndexCache(private val json: Json) {
     }
 }
 
+/**
+ * Decoding the whole overrides map is O(library size) and it happens several times per item
+ * during a scan, so keep the last decode and only redo it when the stored JSON changes.
+ */
+internal class LocalMetadataOverridesCache(private val json: Json) {
+    private var serialized: String? = null
+    private var overrides: Map<String, LocalMetadataOverride> = emptyMap()
+
+    @Synchronized
+    fun get(value: String?): Map<String, LocalMetadataOverride> {
+        if (value != serialized) {
+            overrides = value
+                ?.let { runCatching { json.decodeFromString<Map<String, LocalMetadataOverride>>(it) }.getOrNull() }
+                ?: emptyMap()
+            serialized = value
+        }
+        return overrides
+    }
+}
+
 @Serializable
 data class LocalLibraryManifest(
     val libraryId: String,
@@ -344,6 +364,7 @@ class LocalLibraryPreferences(
 ) {
     private val configCache = LocalLibraryConfigCache(json, sourceId)
     private val indexCache = LocalLibraryIndexCache(json)
+    private val metadataOverridesCache = LocalMetadataOverridesCache(json)
 
     fun getConfig(): LocalLibraryConfig = synchronized(preferences) {
         val storedValue = preferences.getString(KEY_CONFIG, null)
@@ -443,15 +464,8 @@ class LocalLibraryPreferences(
         )
     }
 
-    fun getMetadataOverrides(): Map<String, LocalMetadataOverride> {
-        return preferences.getString(KEY_METADATA_OVERRIDES, null)
-            ?.let {
-                runCatching {
-                    json.decodeFromString<Map<String, LocalMetadataOverride>>(it)
-                }.getOrNull()
-            }
-            ?: emptyMap()
-    }
+    fun getMetadataOverrides(): Map<String, LocalMetadataOverride> =
+        metadataOverridesCache.get(preferences.getString(KEY_METADATA_OVERRIDES, null))
 
     internal fun folderDisplaySettings(key: String): LocalFolderDisplaySettings =
         preferences.getString("local_folder_display_$key", null)
