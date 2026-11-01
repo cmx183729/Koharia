@@ -191,6 +191,9 @@ data class LocalLibraryScreen(
         val refreshTasks = remember { Injekt.get<LocalLibraryRefreshTasks>() }
         val backgroundRefreshes by refreshTasks.activeIds.collectAsState()
         val backgroundRefreshErrors by refreshTasks.errors.collectAsState()
+        val scanProgressTracker = remember { Injekt.get<LocalLibraryScanProgressTracker>() }
+        val scanProgress by scanProgressTracker.progress.collectAsState()
+        val currentScanProgress = scanProgress[sourceId]
         val parentManga by screenModel.parentManga.collectAsState(initial = null)
         val seriesDisplayMode by libraryPreferences.chapterCoverDisplayMode.collectAsState()
         val displayMode = if (parentUrl == null) {
@@ -602,6 +605,9 @@ data class LocalLibraryScreen(
 
                         HorizontalDivider()
                         if (state.isPreparingDeletion || state.isUpdatingItems) EInkLinearProgressIndicator()
+                        currentScanProgress?.let { progress ->
+                            LocalLibraryScanProgressBar(progress = progress)
+                        }
                     }
                 },
                 snackbarHost = { SnackbarHost(snackbarHostState) },

@@ -96,6 +96,20 @@ data class LocalLibraryConfig(
      * Stored per library so one shelf can drop a release-group prefix without touching another.
      */
     val titlePurgeRegex: String = "",
+    /**
+     * How many sibling directory listings one scan keeps in flight. A listing is a blocking provider
+     * round trip, so this is the knob that decides whether a scan uses one thread or several.
+     */
+    val scanListingConcurrency: Int = DEFAULT_SCAN_LISTING_CONCURRENCY,
+    /** How many entries one scan reads metadata for at a time. */
+    val scanMetadataConcurrency: Int = DEFAULT_SCAN_METADATA_CONCURRENCY,
+    /** How often a network scan restages the visible entries while the walk is still running. */
+    val scanPreviewIntervalMs: Int = DEFAULT_SCAN_PREVIEW_INTERVAL_MS,
+    /**
+     * Skip an entry whose images are all empty instead of importing it. The scan already knows each
+     * file size from the directory listing, so this costs no extra provider round trip.
+     */
+    val skipEmptyEntries: Boolean = true,
     val libraryId: String = "",
     @EncodeDefault val setupCompleted: Boolean = false,
     val schemaVersion: Int = 7,
@@ -104,7 +118,18 @@ data class LocalLibraryConfig(
     val displayPath: String = "",
     val contentType: LocalLibraryContentType = LocalLibraryContentType.MIXED,
     val layout: LocalLibraryLayout = LocalLibraryLayout.COMPATIBLE,
-)
+) {
+    companion object {
+        const val DEFAULT_SCAN_LISTING_CONCURRENCY = 8
+        const val DEFAULT_SCAN_METADATA_CONCURRENCY = 8
+        const val DEFAULT_SCAN_PREVIEW_INTERVAL_MS = 500
+        const val MIN_SCAN_CONCURRENCY = 1
+        const val MAX_SCAN_CONCURRENCY = 16
+        const val MIN_SCAN_PREVIEW_INTERVAL_MS = 250
+        const val MAX_SCAN_PREVIEW_INTERVAL_MS = 5_000
+        const val SCAN_PREVIEW_INTERVAL_STEP_MS = 250
+    }
+}
 
 @Serializable
 data class LocalLibraryItem(

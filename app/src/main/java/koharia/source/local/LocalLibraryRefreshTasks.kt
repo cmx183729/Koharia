@@ -13,12 +13,23 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 
 /** Explicit scans belong to the application, not the screen waiting for their result. */
 class LocalLibraryRefreshTasks(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
     private val tasks = mutableMapOf<Long, Deferred<Result<ConnectionLibraryRefreshResult>>>()
+
+    /**
+     * Lazily resolved because this class is itself built by the injector; the scan reports its own
+     * progress and this only has to drop the last value once the scan is over, whatever ended it.
+     * Null when there is no injector, which is the case in unit tests.
+     */
+    private val scanProgress by lazy {
+        runCatching { Injekt.get<LocalLibraryScanProgressTracker>() }.getOrNull()
+    }
     private val active = MutableStateFlow(emptySet<Long>())
     val activeIds = active.asStateFlow()
     private val failures = MutableStateFlow<Map<Long, Throwable>>(emptyMap())
@@ -58,6 +69,7 @@ class LocalLibraryRefreshTasks(
                             active.update { it - id }
                         }
                     }
+                    scanProgress?.clear(id)
                 }
                 task.start()
             }

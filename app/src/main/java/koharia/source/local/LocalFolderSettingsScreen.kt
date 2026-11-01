@@ -32,6 +32,8 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,6 +51,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
@@ -76,6 +81,7 @@ import tachiyomi.presentation.core.i18n.stringResource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.util.UUID
+import kotlin.math.roundToInt
 import tachiyomi.core.common.i18n.stringResource as contextStringResource
 
 class LocalFolderSettingsScreen(
@@ -850,40 +856,47 @@ class LocalFolderSettingsScreen(
                         }
                         listOf(LocalLibraryContentType.COMICS, LocalLibraryContentType.BOOKS).forEach { type ->
                             val enabled = type in config.enabledContentTypes
-                            if (!config.setupCompleted) {
-                                item {
-                                    ListItem(
-                                        modifier = Modifier.toggleable(
-                                            value = enabled,
-                                            enabled = !isSaving && !isPreparingDirectories,
-                                            role = Role.Checkbox,
-                                            onValueChange = { checked ->
-                                                config = config.copy(
-                                                    enabledContentTypes = if (checked) {
-                                                        config.enabledContentTypes + type
-                                                    } else {
-                                                        config.enabledContentTypes -
-                                                            type
-                                                    },
-                                                )
-                                                if (createInitialDirectories) initialDirectoriesCreated = false
-                                            },
-                                        ),
-                                        headlineContent = { Text(bookshelfTypeTitle(type)) },
-                                        leadingContent = {
-                                            Checkbox(
-                                                checked = enabled,
-                                                onCheckedChange = null,
-                                                enabled =
-                                                !isSaving && !isPreparingDirectories,
-                                            )
-                                        },
-                                    )
-                                }
-                            } else {
+                            // A type that still owns bookshelves cannot be switched off: those shelves
+                            // would silently disappear from the library with their entries intact.
+                            val typeLocked = config.setupCompleted && config.bookshelvesFor(type).isNotEmpty()
+                            if (config.setupCompleted) {
                                 item { PreferenceGroupHeader(title = bookshelfTypeTitle(type)) }
                             }
-                            if (!enabled && !config.setupCompleted) return@forEach
+                            item {
+                                ListItem(
+                                    modifier = Modifier.toggleable(
+                                        value = enabled,
+                                        enabled = !isSaving && !isPreparingDirectories && !typeLocked,
+                                        role = Role.Checkbox,
+                                        onValueChange = { checked ->
+                                            config = config.copy(
+                                                enabledContentTypes = if (checked) {
+                                                    config.enabledContentTypes + type
+                                                } else {
+                                                    config.enabledContentTypes -
+                                                        type
+                                                },
+                                            )
+                                            if (createInitialDirectories) initialDirectoriesCreated = false
+                                        },
+                                    ),
+                                    headlineContent = { Text(bookshelfTypeTitle(type)) },
+                                    supportingContent = {
+                                        if (typeLocked) {
+                                            Text(stringResource(MR.strings.local_library_content_type_locked))
+                                        }
+                                    },
+                                    leadingContent = {
+                                        Checkbox(
+                                            checked = enabled,
+                                            onCheckedChange = null,
+                                            enabled =
+                                            !isSaving && !isPreparingDirectories && !typeLocked,
+                                        )
+                                    },
+                                )
+                            }
+                            if (!enabled) return@forEach
                             val shelves = config.bookshelvesFor(type)
                             items(shelves, key = LocalBookshelf::id) { shelf ->
                                 val directorySummary = if (createInitialDirectories && !initialDirectoriesCreated &&
@@ -977,6 +990,9 @@ class LocalFolderSettingsScreen(
                     }
                     if (config.setupCompleted) {
                         item {
+                            PreferenceGroupHeader(title = stringResource(MR.strings.local_library_section_metadata))
+                        }
+                        item {
                             TextPreferenceWidget(
                                 title = stringResource(MR.strings.local_library_metadata_storage),
                                 subtitle = metadataLabel(context, config.metadataStorage),
@@ -1007,6 +1023,59 @@ class LocalFolderSettingsScreen(
                                             },
                                         ),
                                     )
+                                },
+                            )
+                        }
+                        item {
+                            PreferenceGroupHeader(title = stringResource(MR.strings.local_library_section_scanning))
+                        }
+                        item {
+                            ScanSliderRow(
+                                title = stringResource(MR.strings.local_library_scan_listing_concurrency),
+                                summary = stringResource(MR.strings.local_library_scan_listing_concurrency_summary),
+                                value = config.scanListingConcurrency,
+                                range = SCAN_CONCURRENCY_RANGE,
+                                enabled = !isSaving,
+                                onValueChange = { config = config.copy(scanListingConcurrency = it) },
+                            )
+                        }
+                        item {
+                            ScanSliderRow(
+                                title = stringResource(MR.strings.local_library_scan_metadata_concurrency),
+                                summary = stringResource(MR.strings.local_library_scan_metadata_concurrency_summary),
+                                value = config.scanMetadataConcurrency,
+                                range = SCAN_CONCURRENCY_RANGE,
+                                enabled = !isSaving,
+                                onValueChange = { config = config.copy(scanMetadataConcurrency = it) },
+                            )
+                        }
+                        item {
+                            ScanSliderRow(
+                                title = stringResource(MR.strings.local_library_scan_preview_interval),
+                                summary = stringResource(MR.strings.local_library_scan_preview_interval_summary),
+                                value = config.scanPreviewIntervalMs,
+                                range = SCAN_PREVIEW_INTERVAL_RANGE,
+                                step = LocalLibraryConfig.SCAN_PREVIEW_INTERVAL_STEP_MS,
+                                enabled = !isSaving,
+                                onValueChange = { config = config.copy(scanPreviewIntervalMs = it) },
+                            )
+                        }
+                        item {
+                            ListItem(
+                                modifier = Modifier.toggleable(
+                                    value = config.skipEmptyEntries,
+                                    enabled = !isSaving,
+                                    role = Role.Switch,
+                                    onValueChange = { config = config.copy(skipEmptyEntries = it) },
+                                ),
+                                headlineContent = {
+                                    Text(stringResource(MR.strings.local_library_skip_empty_entries))
+                                },
+                                supportingContent = {
+                                    Text(stringResource(MR.strings.local_library_skip_empty_entries_summary))
+                                },
+                                leadingContent = {
+                                    Switch(checked = config.skipEmptyEntries, onCheckedChange = null)
                                 },
                             )
                         }
@@ -1364,4 +1433,61 @@ private enum class LocalLibrarySetupStep {
     METADATA,
 }
 
+/**
+ * One integer scan tuning knob. The value is shown next to the label so a slider drag has a
+ * readable number attached to it, and [step] snaps the slider onto the same grid the scanner uses.
+ */
+@Composable
+private fun ScanSliderRow(
+    title: String,
+    summary: String,
+    value: Int,
+    range: IntRange,
+    enabled: Boolean,
+    step: Int = 1,
+    onValueChange: (Int) -> Unit,
+) {
+    val steps = if (step > 1) ((range.last - range.first) / step - 1).coerceAtLeast(0) else 0
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            Text(value.toString(), style = MaterialTheme.typography.titleMedium)
+        }
+        Slider(
+            value = value.coerceIn(range.first, range.last).toFloat(),
+            onValueChange = {
+                val snapped = if (step > 1) {
+                    (range.first + ((it.roundToInt() - range.first) / step) * step)
+                        .coerceIn(range.first, range.last)
+                } else {
+                    it.roundToInt().coerceIn(range.first, range.last)
+                }
+                onValueChange(snapped)
+            },
+            valueRange = range.first.toFloat()..range.last.toFloat(),
+            steps = steps,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth().semantics {
+                contentDescription = title
+                stateDescription = value.toString()
+            },
+        )
+        Text(
+            summary,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 private const val EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY = "com.android.externalstorage.documents"
+
+private val SCAN_CONCURRENCY_RANGE =
+    LocalLibraryConfig.MIN_SCAN_CONCURRENCY..LocalLibraryConfig.MAX_SCAN_CONCURRENCY
+
+private val SCAN_PREVIEW_INTERVAL_RANGE =
+    LocalLibraryConfig.MIN_SCAN_PREVIEW_INTERVAL_MS..LocalLibraryConfig.MAX_SCAN_PREVIEW_INTERVAL_MS

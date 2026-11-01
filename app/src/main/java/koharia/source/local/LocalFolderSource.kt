@@ -112,6 +112,7 @@ import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicInteger
 
 internal data class LocalReadProgressIndex(
     val indexedChapterCount: Int,
@@ -2728,9 +2729,6 @@ class LocalFolderSource(
         }
     }
 
-    /** Bounds how many directory listings a single scan keeps in flight at once. */
-    private val scanListingPermits = Semaphore(SCAN_LISTING_CONCURRENCY)
-
     private suspend fun candidateResources(
         root: ResolvedLocalLibraryRoot,
         partial: Boolean = false,
@@ -2751,10 +2749,18 @@ class LocalFolderSource(
      */
     private suspend fun prefetchListings(directories: List<UniFile>, reader: LocalScanDirectoryReader) {
         if (directories.size < 2) return
+        // Groups are awaited one at a time, so a per-group budget bounds the whole walk just as well
+        // as one shared semaphore would, while still honouring the per-library setting.
+        val permits = Semaphore(
+            preferences.getConfig().scanListingConcurrency.coerceIn(
+                LocalLibraryConfig.MIN_SCAN_CONCURRENCY,
+                LocalLibraryConfig.MAX_SCAN_CONCURRENCY,
+            ),
+        )
         coroutineScope {
             directories.forEach { directory ->
                 launch(Dispatchers.IO) {
-                    scanListingPermits.withPermit {
+                    permits.withPermit {
                         try {
                             reader.list(directory)
                         } catch (error: CancellationException) {
@@ -2842,6 +2848,7 @@ class LocalFolderSource(
                         folderImages.entries.map { it.file }, folderImages.images.map { it.file }, reader.attributes,
                         marker = marker,
                         pureImages = folderImages.pureImages && !hasDirectories,
+                        empty = scanIsEmptyEntry(folderImages.images.map { it.file }, reader),
                     )
                 }
                 if (folderImages.pureImages && imageSeriesEnabled) {
@@ -2867,6 +2874,7 @@ class LocalFolderSource(
                         reader.attributes,
                         marker = imageSeriesMarker,
                         pureImages = true,
+                        empty = scanIsEmptyEntry(folderImages.images.map { it.file }, reader),
                     )
                 }
             }
@@ -2905,6 +2913,8 @@ class LocalFolderSource(
                         },
                         listOf(file.file),
                         reader.attributes,
+                        empty = file.sizeBytes <= 0L &&
+                            file.extension in LocalMediaFormats.images.extensions,
                     )
                 }
             val subdirectories = children.filter {
@@ -2952,6 +2962,7 @@ class LocalFolderSource(
                         attributes = reader.attributes,
                         pureImages = scanFolderImages(root.directory, reader).pureImages &&
                             rootChapters.none(LocalScanFile::directory),
+                        empty = scanIsEmptyEntry(rootChapters.map { it.file }, reader),
                     ),
                 )
             }
@@ -3001,6 +3012,7 @@ class LocalFolderSource(
                             entries,
                         )
                     }.getOrNull(),
+                    empty = scanIsEmptyEntry(chapters.map { it.file }, reader),
                 )
             }
         return result
@@ -3028,6 +3040,7 @@ class LocalFolderSource(
                     files = children.map { it.file },
                     chapterFiles = directImages.map { it.file },
                     attributes = reader.attributes,
+                    empty = scanIsEmptyEntry(directImages.map { it.file }, reader),
                 )
             }
             val imageUris = directImages.mapTo(hashSetOf()) { it.file.uri }
@@ -3052,6 +3065,8 @@ class LocalFolderSource(
                     files = listOf(file.file) + sidecars.map { it.file },
                     chapterFiles = listOf(file.file),
                     attributes = reader.attributes,
+                    empty = file.sizeBytes <= 0L &&
+                        file.extension in LocalMediaFormats.images.extensions,
                 )
             }
             val subdirectories = children.filter { it.directory }
@@ -3062,6 +3077,35 @@ class LocalFolderSource(
         }
         visit(root.directory, "")
         return entries.distinctBy { it.relativePath }
+    }
+
+    /**
+     * True when every image reachable from [chapterFiles] is empty, so importing the entry would
+     * only produce a manga with no readable page. An entry without any image is not empty: it may
+     * still carry an archive, a book or sidecar metadata.
+     */
+    private fun scanIsEmptyEntry(
+        chapterFiles: List<UniFile>,
+        reader: LocalScanDirectoryReader,
+    ): Boolean {
+        val images = mutableListOf<LocalScanFile>()
+        var pending = chapterFiles
+        var depth = 0
+        while (pending.isNotEmpty() && depth < SCAN_EMPTY_ENTRY_MAX_DEPTH) {
+            val nested = mutableListOf<UniFile>()
+            pending.forEach { file ->
+                val attribute = reader.attributes[file.uri] ?: return@forEach
+                if (attribute.directory) {
+                    // The reader memoizes listings, so walking a chapter folder costs no round trip.
+                    nested += reader.list(file).map { it.file }
+                } else if (attribute.extension in LocalMediaFormats.images.extensions) {
+                    images += attribute
+                }
+            }
+            pending = nested
+            depth++
+        }
+        return images.isNotEmpty() && images.all { it.sizeBytes <= 0L }
     }
 
     private fun supportedExtensions(contentType: LocalLibraryContentType): Set<String> = when (contentType) {
@@ -3166,16 +3210,26 @@ class LocalFolderSource(
         val metadataOverrides = preferences.getMetadataOverrides()
         val config = preferences.getConfig()
         val incrementalScan = Injekt.get<koharia.scan.ScanPreferences>().incrementalScan.get()
+        val scanProgress = Injekt.get<LocalLibraryScanProgressTracker>()
+        val metadataConcurrency = config.scanMetadataConcurrency.coerceIn(
+            LocalLibraryConfig.MIN_SCAN_CONCURRENCY,
+            LocalLibraryConfig.MAX_SCAN_CONCURRENCY,
+        )
+        val previewIntervalFloor = config.scanPreviewIntervalMs.coerceIn(
+            LocalLibraryConfig.MIN_SCAN_PREVIEW_INTERVAL_MS,
+            LocalLibraryConfig.MAX_SCAN_PREVIEW_INTERVAL_MS,
+        ).toLong()
+        val previewIntervalCeiling = (previewIntervalFloor * 8).coerceAtLeast(SCAN_PREVIEW_MAX_INTERVAL_MS)
         val configuredRootIds = config.roots.mapTo(mutableSetOf(), LocalLibraryRootConfig::id)
         val successfulRootIds = mutableSetOf<String>()
         val failedRoots = mutableListOf<LocalLibraryRootConfig>()
         val candidateCountsByRoot = mutableMapOf<String, Int>()
         val previewUrls = existingByUrl.keys.toMutableSet()
         var lastPreview = 0L
-        var previewInterval = SCAN_PREVIEW_INTERVAL_MS
+        var previewInterval = previewIntervalFloor
         var lastPreviewPaths: List<String>? = null
-        val candidates = buildList {
-            config.roots.forEach { root ->
+        val rawCandidates = buildList {
+            config.roots.forEachIndexed { rootIndex, root ->
                 try {
                     koharia.storage.NetworkStorageRuntime.fromUri(context, Uri.parse(root.treeUri))?.let { remote ->
                         if (remote.runtime.config.persistentIdentity) remote.runtime.identities.refresh()
@@ -3243,7 +3297,7 @@ class LocalFolderSource(
                                     }
                                     lastPreview = now
                                     previewInterval =
-                                        (previewInterval * 2).coerceAtMost(SCAN_PREVIEW_MAX_INTERVAL_MS)
+                                        (previewInterval * 2).coerceAtMost(previewIntervalCeiling)
                                 }
                             },
                         )
@@ -3263,7 +3317,27 @@ class LocalFolderSource(
                         "Unable to scan local library directory ${root.displayPath}"
                     }
                 }
+                scanProgress.update(
+                    id,
+                    LocalLibraryScanProgress(
+                        phase = LocalLibraryScanProgress.Phase.DISCOVERING,
+                        completed = rootIndex + 1,
+                        total = config.roots.size,
+                    ),
+                )
             }
+        }
+        // An entry whose images are all empty would only import as a manga with no readable page.
+        val candidates = if (config.skipEmptyEntries) {
+            val (emptyEntries, readableEntries) = rawCandidates.partition { it.empty }
+            if (emptyEntries.isNotEmpty()) {
+                logcat {
+                    "Skipping ${emptyEntries.size} empty local library entries"
+                }
+            }
+            readableEntries
+        } else {
+            rawCandidates
         }
         val stagedIndex = preferences.getIndex()
         val previousItems = stagedIndex.items.ifEmpty {
@@ -3296,7 +3370,16 @@ class LocalFolderSource(
         // title keeps the name the previous pattern produced.
         val titleRulesChanged = previousIndex.titlePurgeRegex != config.titlePurgeRegex
 
-        val changedManga = candidates.chunked(SCAN_METADATA_BATCH_SIZE).flatMap { batch ->
+        val indexed = AtomicInteger()
+        scanProgress.update(
+            id,
+            LocalLibraryScanProgress(
+                phase = LocalLibraryScanProgress.Phase.INDEXING,
+                completed = 0,
+                total = candidates.size,
+            ),
+        )
+        val changedManga = candidates.chunked(metadataConcurrency).flatMap { batch ->
             coroutineScope {
                 batch.map { candidate ->
                     async {
@@ -3405,6 +3488,17 @@ class LocalFolderSource(
                                 "Unable to read local metadata for ${candidate.relativePath}"
                             }
                             null
+                        } finally {
+                            // Also runs for the early returns above, otherwise the count would stall
+                            // below the total and the bar would never reach the end.
+                            scanProgress.update(
+                                id,
+                                LocalLibraryScanProgress(
+                                    phase = LocalLibraryScanProgress.Phase.INDEXING,
+                                    completed = indexed.incrementAndGet(),
+                                    total = candidates.size,
+                                ),
+                            )
                         }
                     }
                 }.awaitAll()
@@ -3422,6 +3516,14 @@ class LocalFolderSource(
             }
             mangaRepository.insertNetworkManga(changedManga)
         }
+        scanProgress.update(
+            id,
+            LocalLibraryScanProgress(
+                phase = LocalLibraryScanProgress.Phase.FINISHING,
+                completed = candidates.size,
+                total = candidates.size,
+            ),
+        )
         preferences.setIndex(refreshedIndex.copy(titlePurgeRegex = config.titlePurgeRegex))
         if (failedRoots.isNotEmpty()) {
             throw LocalLibraryPartialScanException(
@@ -3671,10 +3773,12 @@ class LocalFolderSource(
         private val SUPPORTED_FILE_EXTENSIONS = LocalMediaFormats.allExtensions
         private val COMIC_FILE_EXTENSIONS = SUPPORTED_FILE_EXTENSIONS - BOOK_FILE_EXTENSIONS
         private val IMPORT_INVALID_CHARACTERS = Regex("[\\\\/:*?\"<>|]")
-        private const val SCAN_METADATA_BATCH_SIZE = 8
-        private const val SCAN_LISTING_CONCURRENCY = 8
-        private const val SCAN_PREVIEW_INTERVAL_MS = 500L
+
+        /** Upper bound for the backoff applied to a network scan's preview restaging. */
         private const val SCAN_PREVIEW_MAX_INTERVAL_MS = 4_000L
+
+        /** How deep the empty-entry probe walks below a chapter file before giving up. */
+        private const val SCAN_EMPTY_ENTRY_MAX_DEPTH = 2
     }
 
     private data class ScanCandidate(
@@ -3688,6 +3792,7 @@ class LocalFolderSource(
         val attributes: Map<Uri, LocalScanFile>,
         val marker: LocalFolderMarker? = null,
         val pureImages: Boolean = false,
+        val empty: Boolean = false,
     ) {
         val fingerprint = relativePath + ":" + fingerprint(
             (files + resource).distinctBy {
