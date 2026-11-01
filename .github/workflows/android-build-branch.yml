@@ -1,0 +1,165 @@
+name: Android Branch Build
+
+# Branch counterpart to android-build.yml. That workflow only listens on
+# main/master and v* tags, so a fix branch has no way to produce an installable
+# APK. This one listens on fix/** only: it never runs on main and never
+# publishes a release, it just hands back artifacts for device testing.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'fix/**'
+    paths-ignore:
+      - '**.md'
+      - '.github/assets/**'
+
+concurrency:
+  group: android-branch-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify branch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up JDK
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y nasm
+
+      - name: Check code format
+        run: ./gradlew spotlessCheck
+
+      - name: Verify E-Ink motion policy
+        run: ./gradlew verifyEInkMotion
+
+      - name: Run unit tests
+        id: unit_tests
+        run: ./gradlew testDebugUnitTest
+
+      - name: Verify SQLDelight migrations
+        run: ./gradlew verifySqlDelightMigration
+
+      - name: Upload test report
+        if: failure() && steps.unit_tests.outcome == 'failure'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: branch-test-report-${{ github.sha }}
+          path: app/build/reports/tests/testDebugUnitTest
+
+  build:
+    name: Build branch APKs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # versionNameSuffix embeds the commit count, so the shallow default
+          # would stamp every branch build as -1.
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y nasm
+
+      - name: Create ephemeral release signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          keytool -genkeypair \
+            -keystore ci-release.keystore \
+            -storepass changeit \
+            -keypass changeit \
+            -alias koharia-ci \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 3650 \
+            -dname "CN=Koharia CI, OU=Build, O=Koharia, L=CI, ST=CI, C=US" \
+            -noprompt
+          {
+            printf 'storeFile=ci-release.keystore\n'
+            printf 'storePassword=changeit\n'
+            printf 'keyAlias=koharia-ci\n'
+            printf 'keyPassword=changeit\n'
+          } > keystore.properties
+
+      - name: Build debug and release APKs
+        run: ./gradlew assembleDebug assembleRelease -Pinclude-telemetry -Penable-updater
+
+      - name: Upload debug APKs
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: koharia-branch-debug-${{ github.sha }}
+          if-no-files-found: error
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+
+      - name: Upload release APKs
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: koharia-branch-release-${{ github.sha }}
+          if-no-files-found: error
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 14
+
+      - name: Upload mapping
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: koharia-branch-mapping-${{ github.sha }}
+          if-no-files-found: warn
+          path: app/build/outputs/mapping/release
+          retention-days: 14
+
+      - name: Summarize artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "## Branch build ${GITHUB_REF_NAME}"
+            echo
+            echo "Commit \`${GITHUB_SHA}\`"
+            echo
+            echo "| variant | package | apk |"
+            echo "| --- | --- | --- |"
+            for apk in app/build/outputs/apk/debug/*.apk; do
+              [ -e "$apk" ] || continue
+              echo "| debug | app.koharia.dev | \`$(basename "$apk")\` |"
+            done
+            for apk in app/build/outputs/apk/release/*.apk; do
+              [ -e "$apk" ] || continue
+              echo "| release | app.koharia | \`$(basename "$apk")\` |"
+            done
+            echo
+            echo "The debug APK installs as \`app.koharia.dev\`, so it sits next to an"
+            echo "existing release install. The release APK is signed with a throwaway"
+            echo "CI key: it cannot update over a locally signed build without uninstalling first."
+          } >> "$GITHUB_STEP_SUMMARY"
