@@ -2,6 +2,7 @@ package koharia.source.ehentai
 
 import koharia.scan.ArchiveMetadata
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -58,9 +59,12 @@ object EHenMetadataParser {
                 it["token"]?.jsonPrimitive?.content == expectedToken
         } ?: error("Requested gallery was not returned")
         fun value(key: String) = gallery[key]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
+        // The endpoint occasionally mixes numbers and nulls into the tag array. A number reads back
+        // as its own text through jsonPrimitive, so require a JSON string before accepting one.
         val tags = gallery["tags"]?.jsonArray.orEmpty().mapNotNull { element ->
-            runCatching { element.jsonPrimitive.content }
-                .getOrNull()
+            (element as? JsonPrimitive)
+                ?.takeIf(JsonPrimitive::isString)
+                ?.content
                 ?.takeIf(String::isNotBlank)
         }.distinct()
         return EHenGalleryMetadata(
