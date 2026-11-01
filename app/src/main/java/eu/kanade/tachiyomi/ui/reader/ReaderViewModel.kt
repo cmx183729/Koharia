@@ -1510,6 +1510,13 @@ class ReaderViewModel @JvmOverloads constructor(
         chapterReadStartTime = Instant.now().toEpochMilli()
     }
 
+    private suspend fun persistCurrentPageProgress(readerChapter: ReaderChapter?) {
+        val pageIndex = readerChapter?.requestedPage ?: return
+        val pages = readerChapter.pages ?: return
+        val page = pages.getOrNull(pageIndex) ?: return
+        updateChapterProgress(readerChapter, page)
+    }
+
     /**
      * Saves the chapter last read history if incognito mode isn't on.
      */
@@ -1521,6 +1528,7 @@ class ReaderViewModel @JvmOverloads constructor(
 
     private suspend fun updateHistoryInOrder(historyChapter: ReaderChapter?, endTime: Date) {
         readerProgressAction {
+            persistCurrentPageProgress(historyChapter)
             historyChapter?.let { readerChapter ->
                 if (incognitoMode) return@let
 

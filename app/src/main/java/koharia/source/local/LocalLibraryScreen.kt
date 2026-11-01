@@ -322,39 +322,54 @@ data class LocalLibraryScreen(
             return
         }
 
+        fun openDetails(manga: Manga) {
+            navigator.push(
+                MangaScreen(
+                    mangaId = manga.id,
+                    fromSource = true,
+                    sourceId = manga.source,
+                    mangaUrl = manga.url,
+                ),
+            )
+        }
+
+        fun entryMode(manga: Manga): EntryOpenMode {
+            val localSource = screenModel.source as? LocalFolderSource
+            val item = localSource?.indexedEntry(manga.url)
+            return localEntryOpenMode(
+                isImageComic = item?.imageComic == true,
+                isIndividualBook = localSource?.isIndividualBookEntry(manga.url) == true,
+                isIndividualFile = localSource?.isIndividualFileEntry(manga.url) == true,
+                bookMode = entryOpenPreferences.localBookMode(),
+                comicMode = entryOpenPreferences.localMode(),
+            )
+        }
+
         val openEntry: (Manga) -> Unit = {
             if (state.isBusy) {
                 // Wait until the deletion snapshot or operation is complete.
             } else if (selectedIds.isNotEmpty()) {
                 screenModel.toggleSelection(it)
-            } else if (localFolderSource?.indexedEntry(it.url)?.let { entry ->
-                    entry.kind == LocalLibraryItem.Kind.FOLDER && !entry.imageComic
-                } == true
-            ) {
+            } else if (localFolderSource?.isFolderContainer(it.url) == true) {
                 navigator.push(LocalLibraryScreen(sourceId, scope, null, parentUrl = it.url))
             } else {
-                val localSource = screenModel.source as? LocalFolderSource
-                val imageComic = localSource?.indexedEntry(it.url)?.imageComic == true
-                val mode = when {
-                    imageComic -> EntryOpenMode.READER
-                    localSource?.isIndividualBookEntry(it.url) == true ->
-                        entryOpenPreferences.localBookMode()
-                    localSource?.isIndividualFileEntry(it.url) == true ->
-                        entryOpenPreferences.localMode()
-                    else -> EntryOpenMode.DETAILS
-                }
-                when (mode) {
+                when (entryMode(it)) {
                     EntryOpenMode.READER -> screenModel.openLibraryEntry(it)
                     EntryOpenMode.PAGE_PREVIEW ->
                         navigator.push(LanraragiArchivePreviewScreen(it.id, it.source))
-                    EntryOpenMode.DETAILS -> navigator.push(
-                        MangaScreen(
-                            mangaId = it.id,
-                            fromSource = true,
-                            sourceId = it.source,
-                            mangaUrl = it.url,
-                        ),
-                    )
+                    EntryOpenMode.DETAILS -> openDetails(it)
+                }
+            }
+        }
+
+        val openEntryLongClick: (Manga) -> Unit = { manga ->
+            if (!state.isBusy) {
+                if (selectedIds.isNotEmpty()) {
+                    screenModel.toggleSelection(manga)
+                } else if (entryMode(manga) == EntryOpenMode.READER) {
+                    openDetails(manga)
+                } else {
+                    screenModel.openEntryActions(manga)
                 }
             }
         }
@@ -656,7 +671,7 @@ data class LocalLibraryScreen(
                                 onWebViewClick = {},
                                 onHelpClick = {},
                                 onMangaClick = openEntry,
-                                onMangaLongClick = screenModel::openEntryActions,
+                                onMangaLongClick = openEntryLongClick,
                             )
                         }
                     }
