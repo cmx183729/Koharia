@@ -150,8 +150,54 @@ class LocalMetadataStore(
         }
     }
 
+    /**
+     * Legacy `$key.json` overrides all lived in one directory for the whole library. Resolving that
+     * directory costs two provider round trips and the name lookup one more, per scanned item.
+     * The library root holds one child per manga, so paying that per item makes a scan O(items²)
+     * in Binder traffic — the reason a large library crawls while the CPU sits idle. The directory
+     * cannot move during a scan, and nothing writes those files any more, so resolve it once per
+     * base directory and answer lookups from a single listing.
+     */
+    private var legacyDirectoryCache: LegacyMetadataDirectory? = null
+
+    private class LegacyMetadataDirectory(
+        val directory: UniFile?,
+        val names: Set<String>,
+    )
+
+    private fun legacyMetadataDirectory(): LegacyMetadataDirectory {
+        val directory = standardDirectory(null, create = false)
+        val cached = legacyDirectoryCache
+        if (cached != null && cached.directory === directory) return cached
+        val names = directory?.let { dir ->
+            runCatching { dir.listFiles().orEmpty().mapNotNull { it.name }.toSet() }.getOrDefault(emptySet())
+        }.orEmpty()
+        return LegacyMetadataDirectory(directory, names).also { legacyDirectoryCache = it }
+    }
+
+    /**
+     * The library-wide `.koharia/metadata` directory is the same for every item in a scan, and
+     * probing it costs two provider round trips against a root that holds one child per manga.
+     * Remember the resolved directory until the library configuration changes.
+     */
+    private var standardDirectoryCache: StandardMetadataDirectory? = null
+
+    private class StandardMetadataDirectory(val config: LocalLibraryConfig, val directory: UniFile?)
+
     private fun standardDirectory(itemDirectory: UniFile?, create: Boolean = true): UniFile? {
-        val root = itemDirectory ?: preferences.metadataBaseDirectory(context) ?: return null
+        if (itemDirectory != null) return resolveStandardDirectory(itemDirectory, create)
+        val config = preferences.getConfig()
+        val cached = standardDirectoryCache
+        if (cached != null && cached.config === config) {
+            if (!create || cached.directory != null) return cached.directory
+        }
+        val base = preferences.metadataBaseDirectory(context) ?: return null
+        val resolved = resolveStandardDirectory(base, create)
+        standardDirectoryCache = StandardMetadataDirectory(config, resolved)
+        return resolved
+    }
+
+    private fun resolveStandardDirectory(root: UniFile, create: Boolean): UniFile? {
         val metadataRoot = root.findFile(".koharia") ?: if (create) root.createDirectory(".koharia") else null
         return metadataRoot?.findFile("metadata") ?: if (create) metadataRoot?.createDirectory("metadata") else null
     }
@@ -199,8 +245,11 @@ class LocalMetadataStore(
                 if (save(key, value, itemDirectory, LocalLibraryContentType.COMICS, role = role)) return value
             }
         }
-        val directory = standardDirectory(null, create = false)
-        val legacy = directory?.findFile("$key.json") ?: return null
+        val legacyRoot = legacyMetadataDirectory()
+        val directory = legacyRoot.directory
+        val legacyName = "$key.json"
+        if (directory == null || legacyName !in legacyRoot.names) return null
+        val legacy = directory.findFile(legacyName) ?: return null
         val value = runCatching {
             legacy.openInputStream().use {
                 json.decodeFromString<LocalMetadataOverride>(it.readBytes().toString(StandardCharsets.UTF_8))
@@ -284,9 +333,28 @@ class LocalMetadataStore(
         }
     }.getOrNull()
 
-    internal fun folderMarker(directory: UniFile, create: Boolean): LocalFolderMarker? {
-        val metadata = directory.findFile(".koharia") ?: if (create) directory.createDirectory(".koharia") else null
-        metadata ?: return null
+    /**
+     * A scan has already listed this directory, so when the caller hands those entries over the
+     * `.koharia` probe costs nothing. Falling back to a lookup keeps every other caller honest.
+     */
+    private fun resolveMetadataDirectory(
+        directory: UniFile,
+        create: Boolean,
+        knownEntries: List<LocalScanFile>?,
+    ): UniFile? {
+        if (knownEntries == null) {
+            return directory.findFile(".koharia") ?: if (create) directory.createDirectory(".koharia") else null
+        }
+        knownEntries.firstOrNull { it.directory && it.name == ".koharia" }?.let { return it.file }
+        return if (create) directory.createDirectory(".koharia") else null
+    }
+
+    internal fun folderMarker(
+        directory: UniFile,
+        create: Boolean,
+        knownEntries: List<LocalScanFile>? = null,
+    ): LocalFolderMarker? {
+        val metadata = resolveMetadataDirectory(directory, create, knownEntries) ?: return null
         val existing = metadata.findFile("folder.json")
         if (existing != null) {
             return runCatching {

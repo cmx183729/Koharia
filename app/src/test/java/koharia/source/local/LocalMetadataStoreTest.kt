@@ -23,6 +23,25 @@ import java.io.ByteArrayOutputStream
 
 class LocalMetadataStoreTest {
     @Test
+    fun `legacy overrides are answered from one listing instead of a probe per item`() {
+        val fixture = Fixture(LocalMetadataStorage.DATABASE)
+        fixture.metadataDirectory().put("book.json", Json.encodeToString(LocalMetadataOverride(title = "Legacy")))
+        assertEquals(
+            "Legacy",
+            fixture.store.readAndMigrate("book", fixture.root.file, LocalLibraryContentType.COMICS)?.title,
+        )
+        // Every later lookup must come from the cached listing: the library root holds one child per
+        // manga, so probing it per item is what makes a large library scan crawl.
+        fixture.root.findFileCalls = 0
+        repeat(25) { index ->
+            assertNull(
+                fixture.store.readAndMigrate("missing$index", fixture.root.file, LocalLibraryContentType.COMICS),
+            )
+        }
+        assertEquals(0, fixture.root.findFileCalls)
+    }
+
+    @Test
     fun `individual entries never fall back to a generic parent sidecar in any storage mode`() {
         LocalMetadataStorage.entries.forEach { storage ->
             val fixture = Fixture(storage)
@@ -99,9 +118,14 @@ class LocalMetadataStoreTest {
         val directories = mutableMapOf<String, Directory>()
         val file: UniFile = mockk()
         var failRenameTo: String? = null
+        var findFileCalls = 0
         init {
             every { file.findFile(any()) } answers {
+                findFileCalls++
                 files[firstArg<String>()]?.file ?: directories[firstArg<String>()]?.file
+            }
+            every { file.listFiles() } answers {
+                (files.values.map { it.file } + directories.values.map { it.file }).toTypedArray()
             }
             every { file.createDirectory(any()) } answers {
                 directories.getOrPut(firstArg()) { Directory() }.file

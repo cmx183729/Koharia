@@ -2819,11 +2819,12 @@ class LocalFolderSource(
                 val base = File(checkNotNull(root.directory.uri.path)).canonicalFile.toPath()
                 check(File(checkNotNull(directory.uri.path)).canonicalFile.toPath().startsWith(base))
             }
-            val children = reader.list(directory).filterNot { it.name.startsWith('.') || ".importing-" in it.name }
+            val entries = reader.list(directory)
+            val children = entries.filterNot { it.name.startsWith('.') || ".importing-" in it.name }
             val content = children.filterNot { isLocalAuxiliaryFile(it.name) }
             val folderImages = scanFolderImages(directory, reader)
             val marker = path.takeIf(String::isNotEmpty)?.let {
-                runCatching { metadataStore.folderMarker(directory, createMarkers) }.getOrNull()
+                runCatching { metadataStore.folderMarker(directory, createMarkers, entries) }.getOrNull()
             }
             val storedOverride = marker?.imageComicOverride
                 ?: preferences.getIndex().itemsByLocation[root.config.id to path]?.imageComicOverride
@@ -2959,7 +2960,8 @@ class LocalFolderSource(
         prefetchListings(seriesDirectories.map { it.file }, reader)
         result += seriesDirectories
             .map { directory ->
-                val files = reader.list(directory.file).filterNot { it.name.startsWith('.') }
+                val entries = reader.list(directory.file)
+                val files = entries.filterNot { it.name.startsWith('.') }
                 prefetchListings(files.filter { it.directory }.map { it.file }, reader)
                 val chapters = files.filter { entry ->
                     if (entry.directory) {
@@ -2996,6 +2998,7 @@ class LocalFolderSource(
                         metadataStore.folderMarker(
                             directory.file,
                             preferences.getConfig().metadataStorage == LocalMetadataStorage.FOLDER_DIRECTORY,
+                            entries,
                         )
                     }.getOrNull(),
                 )
