@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
@@ -184,7 +185,11 @@ class ConnectionLibraryScreen(
         ) { contentPadding ->
             val scanProgress by scanProgressTracker.progress.collectAsState()
             val activeScanProgress = remember(scanProgress) { scanProgress.aggregateScanProgress() }
-            Column(modifier = Modifier.fillMaxSize()) {
+            // The toolbar is opaque and the grid used to be laid out from the very top of the
+            // window, so the first row of covers sat underneath the search and filter actions.
+            // Keeping the padding on the column means the grid viewport starts below the bar
+            // instead of scrolling under it.
+            Column(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
                 activeScanProgress?.let { progress ->
                     LocalLibraryScanProgressBar(progress = progress)
                 }
