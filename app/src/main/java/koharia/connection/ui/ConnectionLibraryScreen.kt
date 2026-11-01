@@ -1,6 +1,8 @@
 package koharia.connection.ui
 
 import android.content.res.Configuration
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -31,8 +33,12 @@ import koharia.connection.ConnectionLibraryEntryKey
 import koharia.connection.ConnectionLibraryKind
 import koharia.connection.MangaDownloadState
 import koharia.connection.NO_ACTIVE_CONNECTION
+import koharia.source.local.LocalLibraryScanProgressBar
+import koharia.source.local.LocalLibraryScanProgressTracker
+import koharia.source.local.aggregateScanProgress
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.components.Badge
 import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.screens.EmptyScreen
@@ -70,6 +76,7 @@ class ConnectionLibraryScreen(
             ConnectionLibraryScreenModel(allowedLibraryKinds = allowedLibraryKinds)
         }
         runtimeModel = model
+        val scanProgressTracker = remember { Injekt.get<LocalLibraryScanProgressTracker>() }
         var searchQuery by remember { mutableStateOf<String?>(null) }
         val state by model.state.collectAsState()
         val pages = model.pages.collectAsLazyPagingItems()
@@ -102,6 +109,9 @@ class ConnectionLibraryScreen(
             ConnectionLibrarySort.OWNER to stringResource(MR.strings.connection_library_sort_owner),
         )
         val ownerLabels = remember(ownerOptions, model) { ownerOptions.toMap() }
+        // Only worth showing when the list actually mixes owners; on a single-source library the
+        // label is the same string on every cover.
+        val showOwnerBadge = ownerOptions.size > 1
         val downloads = remember { Injekt.get<DownloadManager>() }
         val downloadCounts = remember { mutableStateOf<Map<ConnectionLibraryEntryKey, Long>>(emptyMap()) }
         val onDownloadState = remember(downloads, model) {
@@ -172,50 +182,72 @@ class ConnectionLibraryScreen(
                 )
             },
         ) { contentPadding ->
-            when {
-                state.isLoading && state.entries.isEmpty() -> LoadingScreen(Modifier.fillMaxSize())
-                state.error != null && state.entries.isEmpty() ->
-                    EmptyScreen(
-                        message = state.error?.message ?: stringResource(MR.strings.connection_unavailable),
-                        actions = kotlinx.collections.immutable.persistentListOf(
-                            EmptyScreenAction(
-                                stringRes = MR.strings.action_retry,
-                                icon = Icons.Outlined.Refresh,
-                                onClick = model::refresh,
+            val scanProgress by scanProgressTracker.progress.collectAsState()
+            val activeScanProgress = remember(scanProgress) { scanProgress.aggregateScanProgress() }
+            Column(modifier = Modifier.fillMaxSize()) {
+                activeScanProgress?.let { progress ->
+                    LocalLibraryScanProgressBar(progress = progress)
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    when {
+                        state.isLoading && state.entries.isEmpty() -> LoadingScreen(Modifier.fillMaxSize())
+                        state.error != null && state.entries.isEmpty() ->
+                            EmptyScreen(
+                                message = state.error?.message ?: stringResource(MR.strings.connection_unavailable),
+                                actions = kotlinx.collections.immutable.persistentListOf(
+                                    EmptyScreenAction(
+                                        stringRes = MR.strings.action_retry,
+                                        icon = Icons.Outlined.Refresh,
+                                        onClick = model::refresh,
+                                    ),
+                                ),
+                            )
+                        state.entries.isEmpty() -> EmptyScreen(
+                            message = stringResource(MR.strings.no_results_found),
+                            actions = kotlinx.collections.immutable.persistentListOf(
+                                EmptyScreenAction(
+                                    stringRes = MR.strings.action_retry,
+                                    icon = Icons.Outlined.Refresh,
+                                    onClick = model::refresh,
+                                ),
                             ),
-                        ),
-                    )
-                state.entries.isEmpty() -> EmptyScreen(
-                    message = stringResource(MR.strings.no_results_found),
-                    actions = kotlinx.collections.immutable.persistentListOf(
-                        EmptyScreenAction(
-                            stringRes = MR.strings.action_retry,
-                            icon = Icons.Outlined.Refresh,
-                            onClick = model::refresh,
-                        ),
-                    ),
-                )
-                else -> BrowseSourceContent(
-                    modifier = Modifier.fillMaxSize(),
-                    source = null,
-                    mangaList = pages,
-                    columns = if (columns > 0) GridCells.Fixed(columns) else GridCells.Adaptive(120.dp),
-                    displayMode = state.displayMode,
-                    snackbarHostState = snackbar,
-                    contentPadding = PaddingValues(0.dp),
-                    showLibraryBadges = false,
-                    readProgress = { manga -> progressByKey[ConnectionLibraryEntryKey(manga.source, manga.id)] },
-                    manualDownloadState = onDownloadState,
-                    entryLabel = { manga -> ownerLabels[manga.source] ?: model.ownerLabel(manga.source) },
-                    onWebViewClick = {},
-                    onHelpClick = {},
-                    onMangaClick = { navigator.push(it.toConnectionDetailsScreen()) },
-                    onMangaLongClick = { navigator.push(it.toConnectionDetailsScreen()) },
-                    onRefresh = model::refresh,
-                    // Entries come from an in-memory list, so there is never a paging load to
-                    // report: the aggregate screen renders its own loading state above.
-                    showPagingLoadingIndicator = false,
-                )
+                        )
+                        else -> BrowseSourceContent(
+                            modifier = Modifier.fillMaxSize(),
+                            source = null,
+                            mangaList = pages,
+                            columns = if (columns > 0) GridCells.Fixed(columns) else GridCells.Adaptive(120.dp),
+                            displayMode = state.displayMode,
+                            snackbarHostState = snackbar,
+                            contentPadding = PaddingValues(0.dp),
+                            showLibraryBadges = false,
+                            readProgress = { manga ->
+                                progressByKey[ConnectionLibraryEntryKey(manga.source, manga.id)]
+                            },
+                            manualDownloadState = onDownloadState,
+                            // The owner name is a disambiguation aid, not the entry title. Passing
+                            // it as entryLabel replaced the manga title with the library name on
+                            // every tile, which is why the library name showed up instead of the
+                            // manga name.
+                            entryBadge = { manga ->
+                                if (showOwnerBadge) {
+                                    Badge(
+                                        text = ownerLabels[manga.source]
+                                            ?: model.ownerLabel(manga.source),
+                                    )
+                                }
+                            },
+                            onWebViewClick = {},
+                            onHelpClick = {},
+                            onMangaClick = { navigator.push(it.toConnectionDetailsScreen()) },
+                            onMangaLongClick = { navigator.push(it.toConnectionDetailsScreen()) },
+                            onRefresh = model::refresh,
+                            // Entries come from an in-memory list, so there is never a paging load
+                            // to report: the aggregate screen renders its own loading state above.
+                            showPagingLoadingIndicator = false,
+                        )
+                    }
+                }
             }
         }
     }
