@@ -48,69 +48,79 @@ internal class LocalLibraryIndexStore(
     fun pendingFolderOperation(): String? = memoOrLoad().folderOperation
 
     fun removePendingChapterRefresh(itemKey: String) {
-        val memo = memoOrLoad()
-        if (itemKey !in memo.index.pendingChapterRefreshItemKeys) return
-        val updated = memo.index.copy(
-            pendingChapterRefreshItemKeys = memo.index.pendingChapterRefreshItemKeys - itemKey,
-        )
-        memos[sourceId] = Memo(updated, memo.folderOperation)
-        runBlocking {
-            repository.apply(
-                sourceId,
-                LocalLibraryIndexWrite(
-                    items = emptyList(),
-                    removedItemKeys = emptySet(),
-                    pendingRefreshItemKeys = emptySet(),
-                    removedPendingRefreshItemKeys = setOf(itemKey),
-                    scannedAt = updated.scannedAt,
-                    schemaVersion = updated.schemaVersion,
-                    titlePurgeRegex = updated.titlePurgeRegex,
-                    folderOperation = memo.folderOperation,
-                ),
+        synchronized(writeLock) {
+            val memo = memoOrLoad()
+            if (itemKey !in memo.index.pendingChapterRefreshItemKeys) return
+            val updated = memo.index.copy(
+                pendingChapterRefreshItemKeys = memo.index.pendingChapterRefreshItemKeys - itemKey,
             )
+            memos[sourceId] = Memo(updated, memo.folderOperation)
+            runBlocking {
+                repository.apply(
+                    sourceId,
+                    LocalLibraryIndexWrite(
+                        items = emptyList(),
+                        removedItemKeys = emptySet(),
+                        pendingRefreshItemKeys = emptySet(),
+                        removedPendingRefreshItemKeys = setOf(itemKey),
+                        scannedAt = updated.scannedAt,
+                        schemaVersion = updated.schemaVersion,
+                        titlePurgeRegex = updated.titlePurgeRegex,
+                        folderOperation = memo.folderOperation,
+                    ),
+                )
+            }
+            writes.tryEmit(sourceId)
         }
-        writes.tryEmit(sourceId)
     }
 
     fun clear() {
-        memos.remove(sourceId)
-        runBlocking { repository.clear(sourceId) }
-        writes.tryEmit(sourceId)
+        synchronized(writeLock) {
+            memos.remove(sourceId)
+            runBlocking { repository.clear(sourceId) }
+            writes.tryEmit(sourceId)
+        }
     }
 
     private fun store(index: LocalLibraryIndex, folderOperation: String?) {
-        val previous = memoOrLoad()
-        memos[sourceId] = Memo(index, folderOperation)
-        val previousItems = previous.index.itemsByKey
-        val changedItems = index.items.filter { previousItems[it.itemKey] != it }
-        val removedItems = previousItems.keys - index.itemsByKey.keys
-        val addedPending = index.pendingChapterRefreshItemKeys - previous.index.pendingChapterRefreshItemKeys
-        val removedPending = previous.index.pendingChapterRefreshItemKeys - index.pendingChapterRefreshItemKeys
-        val metaChanged = previous.index.scannedAt != index.scannedAt ||
-            previous.index.schemaVersion != index.schemaVersion ||
-            previous.index.titlePurgeRegex != index.titlePurgeRegex ||
-            previous.folderOperation != folderOperation
-        if (changedItems.isEmpty() && removedItems.isEmpty() && addedPending.isEmpty() &&
-            removedPending.isEmpty() && !metaChanged
-        ) {
-            return
+        // Several preferences instances for one source share the memoized snapshot, so the diff and
+        // the write that follows it have to be one step or two writers can interleave and drop rows.
+        synchronized(writeLock) {
+            val previous = memoOrLoad()
+            memos[sourceId] = Memo(index, folderOperation)
+            val previousItems = previous.index.itemsByKey
+            val changedItems = index.items.filter { previousItems[it.itemKey] != it }
+            val removedItems = previousItems.keys - index.itemsByKey.keys
+            val addedPending =
+                index.pendingChapterRefreshItemKeys - previous.index.pendingChapterRefreshItemKeys
+            val removedPending =
+                previous.index.pendingChapterRefreshItemKeys - index.pendingChapterRefreshItemKeys
+            val metaChanged = previous.index.scannedAt != index.scannedAt ||
+                previous.index.schemaVersion != index.schemaVersion ||
+                previous.index.titlePurgeRegex != index.titlePurgeRegex ||
+                previous.folderOperation != folderOperation
+            if (changedItems.isEmpty() && removedItems.isEmpty() && addedPending.isEmpty() &&
+                removedPending.isEmpty() && !metaChanged
+            ) {
+                return
+            }
+            runBlocking {
+                repository.apply(
+                    sourceId,
+                    LocalLibraryIndexWrite(
+                        items = changedItems.map(::toRecord),
+                        removedItemKeys = removedItems,
+                        pendingRefreshItemKeys = addedPending,
+                        removedPendingRefreshItemKeys = removedPending,
+                        scannedAt = index.scannedAt,
+                        schemaVersion = index.schemaVersion,
+                        titlePurgeRegex = index.titlePurgeRegex,
+                        folderOperation = folderOperation,
+                    ),
+                )
+            }
+            writes.tryEmit(sourceId)
         }
-        runBlocking {
-            repository.apply(
-                sourceId,
-                LocalLibraryIndexWrite(
-                    items = changedItems.map(::toRecord),
-                    removedItemKeys = removedItems,
-                    pendingRefreshItemKeys = addedPending,
-                    removedPendingRefreshItemKeys = removedPending,
-                    scannedAt = index.scannedAt,
-                    schemaVersion = index.schemaVersion,
-                    titlePurgeRegex = index.titlePurgeRegex,
-                    folderOperation = folderOperation,
-                ),
-            )
-        }
-        writes.tryEmit(sourceId)
     }
 
     private fun memoOrLoad(): Memo {
@@ -124,6 +134,9 @@ internal class LocalLibraryIndexStore(
     companion object {
         private val memos = ConcurrentHashMap<Long, Memo>()
         private val writes = MutableSharedFlow<Long>(extraBufferCapacity = 64)
+
+        /** Serialises the read-diff-write sequence across every store that shares a source. */
+        private val writeLock = Any()
 
         /** Emits whenever a stored index for [sourceId] changed, so observers can drop their reads. */
         fun changes(sourceId: Long): Flow<Unit> = writes.asSharedFlow()

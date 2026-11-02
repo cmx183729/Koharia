@@ -2905,17 +2905,17 @@ class LocalFolderSource(
             val children = entries.filterNot { it.name.startsWith('.') || ".importing-" in it.name }
             val content = children.filterNot { isLocalAuxiliaryFile(it.name) }
             val folderImages = scanFolderImages(directory, reader)
+            val previousItem = preferences.getIndex().itemsByLocation[root.config.id to path]
             val marker = path.takeIf(String::isNotEmpty)?.let {
                 reusableFolderMarker(
-                    previous = preferences.getIndex().itemsByLocation[root.config.id to path],
+                    previous = previousItem,
                     attributes = reader.attributes[directory.uri],
                     createMarkers = createMarkers,
                 ) ?: runCatching {
                     metadataStore.folderMarker(directory, createMarkers, entries)
                 }.getOrNull()
             }
-            val storedOverride = marker?.imageComicOverride
-                ?: preferences.getIndex().itemsByLocation[root.config.id to path]?.imageComicOverride
+            val storedOverride = marker?.imageComicOverride ?: previousItem?.imageComicOverride
             val imageSeriesEnabled = storedOverride != false
             if (path.isNotEmpty() || folderImages.pureImages) {
                 val hasDirectories = folderImages.entries.any(LocalScanFile::directory)

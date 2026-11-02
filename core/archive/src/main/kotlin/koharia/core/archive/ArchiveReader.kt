@@ -19,9 +19,10 @@ class ArchiveReader(pfd: ParcelFileDescriptor) : Closeable {
      * makes opening page *n* cost *n* header reads; across a chapter that is quadratic, and it is
      * the reason the last pages of a long archive open slowly.
      *
-     * The session is only reused when its previous entry was read to its end and nothing else is
-     * holding it. Anything else - a backwards jump, a page still being decoded - falls back to a
-     * fresh session, which is exactly the previous behaviour.
+     * The session is only reused for an entry *after* the one it last handed out, and only when
+     * nothing else is holding it; libarchive skips whatever was left unread of the previous entry
+     * through the seek callback. Anything else - a backwards jump, the same entry twice, a page
+     * still being decoded - falls back to a fresh session, which is exactly the previous behaviour.
      */
     private var cursor: ArchiveInputStream? = null
 
@@ -123,12 +124,15 @@ class ArchiveReader(pfd: ParcelFileDescriptor) : Closeable {
     private fun positionAt(target: Int): PositionedStream? {
         val retained = synchronized(cursorLock) {
             val existing = cursor
-            if (existing == null || cursorBusy || cursorIndex > target) {
+            // A session can only serve entries ahead of the one it last handed out: its current
+            // entry has already been consumed, and headers cannot be walked backwards.
+            if (existing == null || cursorBusy || cursorIndex >= target) {
                 null
             } else {
                 cursorBusy = true
-                val from = cursorIndex + 1
-                if (advance(existing, from, target)) {
+                // A header walk that fails on a reused session must not surface as a page error:
+                // drop the session and let the fresh pass below decide, exactly as before.
+                if (runCatching { advance(existing, cursorIndex + 1, target) }.getOrDefault(false)) {
                     return PositionedStream(existing, target, retained = true)
                 }
                 cursor = null
@@ -137,10 +141,16 @@ class ArchiveReader(pfd: ParcelFileDescriptor) : Closeable {
                 existing
             }
         }
-        // The session ran out of entries: the archive changed under us, so start over.
-        retained?.close()
+        // The reused session could not walk to the target; drop it and answer from a fresh one.
+        if (retained != null) runCatching { retained.close() }
         val fresh = openStream()
-        if (!advance(fresh, 0, target)) {
+        val advanced = try {
+            advance(fresh, 0, target)
+        } catch (error: Throwable) {
+            runCatching { fresh.close() }
+            throw error
+        }
+        if (!advanced) {
             fresh.close()
             return null
         }
@@ -157,11 +167,13 @@ class ArchiveReader(pfd: ParcelFileDescriptor) : Closeable {
         return true
     }
 
-    private fun release(positioned: PositionedStream, consumed: Boolean) {
+    private fun release(positioned: PositionedStream, failed: Boolean) {
         var keep = false
         synchronized(cursorLock) {
             if (positioned.retained) cursorBusy = false
-            keep = positioned.retained && consumed && !isClosed()
+            // Decoders stop at the end of the image rather than the end of the entry, so "not read
+            // to EOF" is the normal case and must not throw the session away.
+            keep = positioned.retained && !failed && !isClosed()
             if (keep) {
                 cursor = positioned.stream
                 cursorIndex = positioned.index
@@ -170,7 +182,13 @@ class ArchiveReader(pfd: ParcelFileDescriptor) : Closeable {
                 cursorIndex = -1
             }
         }
-        if (!keep) positioned.stream.close()
+        when {
+            keep -> Unit
+            // A failed read leaves the native session in an unknown state; closing it must not
+            // hide the error the caller is already unwinding with.
+            failed -> runCatching { positioned.stream.close() }
+            else -> positioned.stream.close()
+        }
     }
 
     private fun isClosed(): Boolean = synchronized(lock) { closed }
@@ -196,20 +214,20 @@ class ArchiveReader(pfd: ParcelFileDescriptor) : Closeable {
 
     private inner class EntryStream(private val positioned: PositionedStream) : InputStream() {
         private var released = false
-        private var consumed = false
+        private var failed = false
 
         override fun read(): Int {
-            val value = positioned.stream.read()
-            if (value < 0) consumed = true
-            return value
+            // The session may outlive this stream now, so a late read must not walk into whatever
+            // entry the next request left it at.
+            if (released) throw IOException("Entry stream is closed")
+            return track { positioned.stream.read() }
         }
 
         override fun read(b: ByteArray, off: Int, len: Int): Int {
             if (off < 0 || len < 0 || off > b.size - len) throw IndexOutOfBoundsException()
             if (len == 0) return 0
-            val count = positioned.stream.read(b, off, len)
-            if (count < 0) consumed = true
-            return count
+            if (released) throw IOException("Entry stream is closed")
+            return track { positioned.stream.read(b, off, len) }
         }
 
         override fun available(): Int = positioned.stream.available()
@@ -217,7 +235,14 @@ class ArchiveReader(pfd: ParcelFileDescriptor) : Closeable {
         override fun close() {
             if (released) return
             released = true
-            release(positioned, consumed)
+            release(positioned, failed)
+        }
+
+        private inline fun track(block: () -> Int): Int = try {
+            block()
+        } catch (error: Throwable) {
+            failed = true
+            throw error
         }
     }
 
