@@ -541,8 +541,20 @@ class LocalFolderSource(
         }
     }
 
+    /**
+     * Finishes a network scan the provider interrupted, so a half-built snapshot does not sit there
+     * until the owner notices. A library that was never scanned is left alone: its first import is a
+     * manual action, and starting it here would spend that work before the scan knobs were set.
+     */
     internal suspend fun resumePendingNetworkScan() {
-        if (supportsFileTransfers && needsInitialScan()) startLibraryRefresh()
+        if (!supportsFileTransfers) return
+        val pending = withIOContext {
+            preferences.getConfig().roots.any { root ->
+                koharia.storage.NetworkStorageRuntime.fromUri(context, Uri.parse(root.treeUri))
+                    ?.runtime?.snapshot?.hasPendingScan() == true
+            }
+        }
+        if (pending) startLibraryRefresh()
     }
 
     suspend fun needsInitialScan(): Boolean = withIOContext {

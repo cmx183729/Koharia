@@ -64,7 +64,6 @@ import eu.kanade.presentation.more.settings.widget.PreferenceGroupHeader
 import eu.kanade.presentation.more.settings.widget.TextPreferenceWidget
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.util.system.toast
-import koharia.connection.ConnectionLibraryRefreshAdapter
 import koharia.connection.ConnectionProfileManager
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -202,7 +201,6 @@ class LocalFolderSettingsScreen(
         var shelfToRemove by remember { mutableStateOf<LocalBookshelf?>(null) }
         var showUnsavedDialog by remember { mutableStateOf(false) }
         var isSaving by remember { mutableStateOf(false) }
-        var isInitialScanning by remember { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
         val editingShelf = editingShelfId?.let(config::bookshelf)
         fun shelfName(shelf: LocalBookshelf): String = shelf.name.ifBlank {
@@ -362,8 +360,7 @@ class LocalFolderSettingsScreen(
                         return@launch
                     }
                     profileManager.update(profile.copy(name = connectionName.trim()))
-                    isInitialScanning = !preferences.getConfig().setupCompleted
-                    val scanResult = tachiyomi.core.common.util.lang.withIOContext {
+                    tachiyomi.core.common.util.lang.withIOContext {
                         saveLocalLibraryConfiguration(
                             preferences,
                             enabledConfig.copy(libraryId = config.libraryId.ifBlank { UUID.randomUUID().toString() }),
@@ -379,15 +376,8 @@ class LocalFolderSettingsScreen(
                                     )
                                 }
                             },
-                            scan = {
-                                checkNotNull(
-                                    Injekt.get<SourceManager>().get(sourceId) as? ConnectionLibraryRefreshAdapter,
-                                )
-                                    .refreshLibrary()
-                            },
                         )
                     }
-                    if (scanResult?.isFailure == true) context.toast(MR.strings.local_library_initial_scan_failed)
                     if (completeOnboardingOnSave) {
                         basePreferences.shownOnboardingFlow.set(true)
                         navigator.popUntilRoot()
@@ -410,7 +400,6 @@ class LocalFolderSettingsScreen(
                         )
                     }
                 } finally {
-                    isInitialScanning = false
                     isSaving = false
                 }
             }
@@ -517,11 +506,6 @@ class LocalFolderSettingsScreen(
                     item { SetupNotice(stringResource(MR.strings.connection_identity_change_help)) }
                 }
                 item { koharia.connection.ui.ConnectionReconnectionNotice(sourceId) }
-                if (isInitialScanning) {
-                    item {
-                        SetupNotice(stringResource(MR.strings.local_library_initial_scanning))
-                    }
-                }
                 if (editingShelf != null) {
                     item {
                         OutlinedTextField(
