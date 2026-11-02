@@ -659,7 +659,7 @@ class DownloadCache(
             val bytes = ProtoBuf.encodeToByteArray(rootDownloadsDir)
             ensureActive()
             try {
-                diskCacheFile.writeBytes(bytes)
+                writeDiskCache(bytes)
             } catch (e: Throwable) {
                 logcat(
                     priority = LogPriority.ERROR,
@@ -667,6 +667,27 @@ class DownloadCache(
                     message = { "Failed to write disk cache file" },
                 )
             }
+        }
+    }
+
+    /**
+     * Replaces the cached index in one step.
+     *
+     * The file is protobuf, so a process death halfway through a direct write leaves a truncated
+     * payload behind and the next launch has to drop the cache and rescan the whole downloads
+     * directory. Writing to a sibling file first and renaming keeps the old content readable until
+     * the new one is complete, because rename is atomic on the same filesystem.
+     */
+    private fun writeDiskCache(bytes: ByteArray) {
+        val target = diskCacheFile
+        val staging = File(target.parentFile, "${target.name}.staging")
+        try {
+            staging.writeBytes(bytes)
+            if (!staging.renameTo(target)) {
+                target.writeBytes(bytes)
+            }
+        } finally {
+            staging.delete()
         }
     }
 }
