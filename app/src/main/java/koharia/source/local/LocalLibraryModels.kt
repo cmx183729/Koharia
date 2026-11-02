@@ -110,6 +110,13 @@ data class LocalLibraryConfig(
      * file size from the directory listing, so this costs no extra provider round trip.
      */
     val skipEmptyEntries: Boolean = true,
+    /**
+     * Skip a comic entry that holds at most this many readable images. Folder names often promise a
+     * chapter that only kept one or two damaged pages, and importing those leaves dead shelf slots.
+     * Zero disables the filter. Entries whose pages live inside an archive or book are never
+     * filtered, because their image count cannot be known from the listing.
+     */
+    val minImagesPerEntry: Int = DEFAULT_MIN_IMAGES_PER_ENTRY,
     val libraryId: String = "",
     @EncodeDefault val setupCompleted: Boolean = false,
     val schemaVersion: Int = 7,
@@ -128,6 +135,9 @@ data class LocalLibraryConfig(
         const val MIN_SCAN_PREVIEW_INTERVAL_MS = 250
         const val MAX_SCAN_PREVIEW_INTERVAL_MS = 5_000
         const val SCAN_PREVIEW_INTERVAL_STEP_MS = 250
+        const val DEFAULT_MIN_IMAGES_PER_ENTRY = 0
+        const val MIN_MIN_IMAGES_PER_ENTRY = 0
+        const val MAX_MIN_IMAGES_PER_ENTRY = 10
     }
 }
 

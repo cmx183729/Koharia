@@ -2418,5 +2418,7 @@
     <string name="local_library_scan_preview_interval_summary">网络扫描进行时列表刷新的毫秒间隔。数值越大，实时反馈越少但重复工作越省。</string>
     <string name="local_library_skip_empty_entries">跳过没有可用图片的条目</string>
     <string name="local_library_skip_empty_entries_summary">条目里既没有压缩包或电子书，图片也全都没有内容时不再入库，所以从没下载过的文件夹不会出现在书架上。</string>
+    <string name="local_library_scan_min_images">最少图片数</string>
+    <string name="local_library_scan_min_images_summary">漫画条目里的图片数不超过这个值就不再入库，用来清掉只剩几张坏图的文件夹。设为 0 表示全部入库。压缩包和电子书按自身页数计算，不受此限制。</string>
     <string name="local_library_content_type_locked">请先删除该类型的书架</string>
 </resources>

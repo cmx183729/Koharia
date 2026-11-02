@@ -2556,5 +2556,7 @@
     <string name="local_library_scan_preview_interval_summary">Milliseconds between list updates while a network scan runs. Larger values trade live feedback for less repeated work.</string>
     <string name="local_library_skip_empty_entries">Skip entries with no readable image</string>
     <string name="local_library_skip_empty_entries_summary">An entry is not imported when it holds no archive or book file and none of its images has any content, so folders that were never downloaded do not reach the shelf.</string>
+    <string name="local_library_scan_min_images">Minimum images per entry</string>
+    <string name="local_library_scan_min_images_summary">Comic entries holding this many images or fewer are skipped, which removes folders left with a few damaged pages. Set it to 0 to import everything. Archives and books are measured by their own pages, so they are not affected.</string>
     <string name="local_library_content_type_locked">Remove its bookshelves first</string>
 </resources>

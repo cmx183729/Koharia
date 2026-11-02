@@ -880,6 +880,16 @@ class LocalFolderSettingsScreen(
                             )
                         }
                         item {
+                            ScanSliderRow(
+                                title = stringResource(MR.strings.local_library_scan_min_images),
+                                summary = stringResource(MR.strings.local_library_scan_min_images_summary),
+                                value = config.minImagesPerEntry,
+                                range = SCAN_MIN_IMAGES_RANGE,
+                                enabled = !isSaving,
+                                onValueChange = { config = config.copy(minImagesPerEntry = it) },
+                            )
+                        }
+                        item {
                             ListItem(
                                 modifier = Modifier.toggleable(
                                     value = config.skipEmptyEntries,
@@ -1492,3 +1502,6 @@ private val SCAN_CONCURRENCY_RANGE =
 
 private val SCAN_PREVIEW_INTERVAL_RANGE =
     LocalLibraryConfig.MIN_SCAN_PREVIEW_INTERVAL_MS..LocalLibraryConfig.MAX_SCAN_PREVIEW_INTERVAL_MS
+
+private val SCAN_MIN_IMAGES_RANGE =
+    LocalLibraryConfig.MIN_MIN_IMAGES_PER_ENTRY..LocalLibraryConfig.MAX_MIN_IMAGES_PER_ENTRY

@@ -2839,6 +2839,7 @@ class LocalFolderSource(
                 val hasDirectories = folderImages.entries.any(LocalScanFile::directory)
                 val imageSeriesMarker = marker?.copy(id = "${marker.id}:image-series")
                 if (path.isNotEmpty() && (!folderImages.pureImages || hasDirectories || !imageSeriesEnabled)) {
+                    val content = scanContentSummary(folderImages.images.map { it.file }, reader)
                     result += ScanCandidate(
                         root.config,
                         directory,
@@ -2848,7 +2849,8 @@ class LocalFolderSource(
                         folderImages.entries.map { it.file }, folderImages.images.map { it.file }, reader.attributes,
                         marker = marker,
                         pureImages = folderImages.pureImages && !hasDirectories,
-                        empty = scanIsEmptyEntry(folderImages.images.map { it.file }, reader),
+                        empty = content.empty,
+                        imageCount = content.measurableImageCount,
                     )
                 }
                 if (folderImages.pureImages && imageSeriesEnabled) {
@@ -2863,6 +2865,7 @@ class LocalFolderSource(
                             .filter(String::isNotBlank)
                             .joinToString("/")
                     }
+                    val imageContent = scanContentSummary(folderImages.images.map { it.file }, reader)
                     result += ScanCandidate(
                         root.config,
                         directory,
@@ -2874,7 +2877,8 @@ class LocalFolderSource(
                         reader.attributes,
                         marker = imageSeriesMarker,
                         pureImages = true,
-                        empty = scanIsEmptyEntry(folderImages.images.map { it.file }, reader),
+                        empty = imageContent.empty,
+                        imageCount = imageContent.measurableImageCount,
                     )
                 }
             }
@@ -2915,6 +2919,7 @@ class LocalFolderSource(
                         reader.attributes,
                         empty = file.sizeBytes <= 0L &&
                             file.extension in LocalMediaFormats.images.extensions,
+                        imageCount = scanFileImageCount(file),
                     )
                 }
             val subdirectories = children.filter {
@@ -2950,6 +2955,7 @@ class LocalFolderSource(
         }
         val result = buildList {
             if (rootChapters.isNotEmpty()) {
+                val content = scanContentSummary(rootChapters.map { it.file }, reader)
                 add(
                     ScanCandidate(
                         root = root.config,
@@ -2962,7 +2968,8 @@ class LocalFolderSource(
                         attributes = reader.attributes,
                         pureImages = scanFolderImages(root.directory, reader).pureImages &&
                             rootChapters.none(LocalScanFile::directory),
-                        empty = scanIsEmptyEntry(rootChapters.map { it.file }, reader),
+                        empty = content.empty,
+                        imageCount = content.measurableImageCount,
                     ),
                 )
             }
@@ -2994,6 +3001,7 @@ class LocalFolderSource(
                     val hasComics = chapters.any { it.directory || it.extension in COMIC_FILE_EXTENSIONS }
                     if (hasBooks && !hasComics) LocalLibraryContentType.BOOKS else LocalLibraryContentType.COMICS
                 }
+                val content = scanContentSummary(chapters.map { it.file }, reader)
                 ScanCandidate(
                     root = root.config,
                     resource = directory.file,
@@ -3012,7 +3020,8 @@ class LocalFolderSource(
                             entries,
                         )
                     }.getOrNull(),
-                    empty = scanIsEmptyEntry(chapters.map { it.file }, reader),
+                    empty = content.empty,
+                    imageCount = content.measurableImageCount,
                 )
             }
         return result
@@ -3031,6 +3040,7 @@ class LocalFolderSource(
             }
             val directImages = children.filter(::scanImage)
             if (directImages.isNotEmpty()) {
+                val content = scanContentSummary(directImages.map { it.file }, reader)
                 entries += ScanCandidate(
                     root = root.config,
                     resource = directory,
@@ -3040,7 +3050,8 @@ class LocalFolderSource(
                     files = children.map { it.file },
                     chapterFiles = directImages.map { it.file },
                     attributes = reader.attributes,
-                    empty = scanIsEmptyEntry(directImages.map { it.file }, reader),
+                    empty = content.empty,
+                    imageCount = content.measurableImageCount,
                 )
             }
             val imageUris = directImages.mapTo(hashSetOf()) { it.file.uri }
@@ -3067,6 +3078,7 @@ class LocalFolderSource(
                     attributes = reader.attributes,
                     empty = file.sizeBytes <= 0L &&
                         file.extension in LocalMediaFormats.images.extensions,
+                    imageCount = scanFileImageCount(file),
                 )
             }
             val subdirectories = children.filter { it.directory }
@@ -3080,16 +3092,36 @@ class LocalFolderSource(
     }
 
     /**
-     * True when the entry holds nothing the reader could open: no readable archive or book file, and
-     * no image that carries bytes. Both halves matter. A folder whose images were never downloaded
-     * imports as a manga with blank pages, and a folder with no images at all imports as a manga
-     * with no pages; neither is worth a shelf slot. Sidecar metadata alone does not make it readable.
+     * What the reader would actually open inside an entry. A page only counts when it carries bytes,
+     * so a folder of interrupted downloads reports zero. An archive or book file is tracked
+     * separately: its pages live inside the file, so it has no listing-visible image count.
      */
-    private fun scanIsEmptyEntry(
+    private data class ScanContentSummary(
+        val imageCount: Int,
+        val readableDocument: Boolean,
+    ) {
+        /**
+         * True when the entry holds nothing the reader could open: no readable archive or book file,
+         * and no image that carries bytes. Both halves matter. A folder whose images were never
+         * downloaded imports as a manga with blank pages, and a folder with no images at all imports
+         * as a manga with no pages; neither is worth a shelf slot. Sidecar metadata alone does not
+         * make it readable.
+         */
+        val empty: Boolean get() = !readableDocument && imageCount == 0
+
+        /**
+         * Image count a min-images threshold can act on, or [SCAN_UNKNOWN_IMAGE_COUNT] when the
+         * pages are packed inside a document and the listing cannot see them.
+         */
+        val measurableImageCount: Int
+            get() = if (readableDocument) SCAN_UNKNOWN_IMAGE_COUNT else imageCount
+    }
+
+    private fun scanContentSummary(
         chapterFiles: List<UniFile>,
         reader: LocalScanDirectoryReader,
-    ): Boolean {
-        val images = mutableListOf<LocalScanFile>()
+    ): ScanContentSummary {
+        var imageCount = 0
         var readableDocument = false
         var pending = chapterFiles
         var depth = 0
@@ -3101,7 +3133,7 @@ class LocalFolderSource(
                     // The reader memoizes listings, so walking a chapter folder costs no round trip.
                     nested += reader.list(file).map { it.file }
                 } else if (attribute.extension in LocalMediaFormats.images.extensions) {
-                    images += attribute
+                    if (attribute.sizeBytes > 0L) imageCount++
                 } else if (attribute.extension in SCAN_READABLE_DOCUMENT_EXTENSIONS &&
                     attribute.sizeBytes > 0L
                 ) {
@@ -3111,9 +3143,15 @@ class LocalFolderSource(
             pending = nested
             depth++
         }
-        if (readableDocument) return false
-        return images.all { it.sizeBytes <= 0L }
+        return ScanContentSummary(imageCount = imageCount, readableDocument = readableDocument)
     }
+
+    /**
+     * A single file has exactly one page when it is an image, and an unknowable count when it is an
+     * archive or book, so the threshold never drops a document entry.
+     */
+    private fun scanFileImageCount(file: LocalScanFile): Int =
+        if (file.extension in LocalMediaFormats.images.extensions) 1 else SCAN_UNKNOWN_IMAGE_COUNT
 
     private fun supportedExtensions(contentType: LocalLibraryContentType): Set<String> = when (contentType) {
         LocalLibraryContentType.COMICS -> COMIC_LIBRARY_EXTENSIONS
@@ -3335,9 +3373,10 @@ class LocalFolderSource(
             }
         }
         // An entry whose images are all empty would only import as a manga with no readable page.
-        // Remote providers are exempt: they report no size for a file they have not materialised,
-        // so a zero there means unknown and dropping the entry would empty the whole shelf.
-        val candidates = if (config.skipEmptyEntries) {
+        // Remote providers are exempt from both size-based filters: they report no size for a file
+        // they have not materialised, so a zero there means unknown, and dropping the entry on that
+        // number would empty the whole shelf.
+        val measurableEntries = if (config.skipEmptyEntries) {
             val (emptyEntries, readableEntries) = rawCandidates.partition {
                 it.empty && it.resource !is com.hippo.unifile.RemoteStorageFile
             }
@@ -3349,6 +3388,27 @@ class LocalFolderSource(
             readableEntries
         } else {
             rawCandidates
+        }
+        // Folders that survived as much as one damaged page still import as a manga nobody can read.
+        // The threshold is what lets a library owner drop those without listing them by hand.
+        val minImages = config.minImagesPerEntry.coerceIn(
+            LocalLibraryConfig.MIN_MIN_IMAGES_PER_ENTRY,
+            LocalLibraryConfig.MAX_MIN_IMAGES_PER_ENTRY,
+        )
+        val candidates = if (minImages > 0) {
+            val (sparseEntries, denseEntries) = measurableEntries.partition {
+                it.imageCount >= 0 &&
+                    it.imageCount <= minImages &&
+                    it.resource !is com.hippo.unifile.RemoteStorageFile
+            }
+            if (sparseEntries.isNotEmpty()) {
+                logcat {
+                    "Skipping ${sparseEntries.size} local library entries with at most $minImages images"
+                }
+            }
+            denseEntries
+        } else {
+            measurableEntries
         }
         val stagedIndex = preferences.getIndex()
         val previousItems = stagedIndex.items.ifEmpty {
@@ -3797,6 +3857,9 @@ class LocalFolderSource(
          */
         private val SCAN_READABLE_DOCUMENT_EXTENSIONS =
             LocalMediaFormats.archives.extensions + LocalMediaFormats.bookExtensions
+
+        /** Marks a candidate whose page count cannot be read from the listing. */
+        private const val SCAN_UNKNOWN_IMAGE_COUNT = -1
     }
 
     private data class ScanCandidate(
@@ -3811,6 +3874,7 @@ class LocalFolderSource(
         val marker: LocalFolderMarker? = null,
         val pureImages: Boolean = false,
         val empty: Boolean = false,
+        val imageCount: Int = SCAN_UNKNOWN_IMAGE_COUNT,
     ) {
         val fingerprint = relativePath + ":" + fingerprint(
             (files + resource).distinctBy {
