@@ -2406,6 +2406,7 @@
     <string name="replacement_import_settings">导入继承设置及范围开关</string>
     <string name="local_library_scan_progress_discovering">正在扫描目录…</string>
     <string name="local_library_scan_progress_indexing">正在入库 %1$d / %2$d</string>
+    <string name="local_library_scan_progress_indexing_percent">%1$d%% · %2$d / %3$d</string>
     <string name="local_library_scan_progress_finishing">正在保存索引…</string>
     <string name="local_library_section_structure">书库结构</string>
     <string name="local_library_section_metadata">命名与元数据</string>

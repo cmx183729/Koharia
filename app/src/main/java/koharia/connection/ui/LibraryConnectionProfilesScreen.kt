@@ -70,6 +70,9 @@ import koharia.connection.ConnectionProfileManager
 import koharia.connection.ConnectionProvider
 import koharia.connection.ConnectionRegistry
 import koharia.connection.LibraryConnectionProfile
+import koharia.source.local.LocalLibraryScanProgress
+import koharia.source.local.LocalLibraryScanProgressInline
+import koharia.source.local.LocalLibraryScanProgressTracker
 import kotlinx.collections.immutable.toImmutableMap
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -127,6 +130,8 @@ class LibraryConnectionProfilesScreen(
         var refreshingConnectionIds by remember { mutableStateOf(emptySet<Long>()) }
         val localRefreshIds by remember { Injekt.get<koharia.source.local.LocalLibraryRefreshTasks>() }
             .activeIds.collectAsState()
+        val scanProgressTracker = remember { Injekt.get<LocalLibraryScanProgressTracker>() }
+        val scanProgressBySource by scanProgressTracker.progress.collectAsState()
         val addConnectionTitle = stringResource(MR.strings.connection_settings_add_title)
         val editConnectionTitle = stringResource(MR.strings.connection_settings_edit_title)
 
@@ -274,6 +279,7 @@ class LibraryConnectionProfilesScreen(
                             writesPaused = profile.id in pausedIds,
                             isAvailable = provider != null,
                             isActive = activeConnectionId == profile.id,
+                            scanProgress = scanProgressBySource[profile.id],
                             onSelect = { connectionPreferences.activeConnectionId.set(profile.id) },
                             onLongClick = { profileActions = profile },
                             onEdit = { editProfile(profile) },
@@ -463,6 +469,7 @@ private fun ConnectionRow(
     writesPaused: Boolean,
     isAvailable: Boolean,
     isActive: Boolean,
+    scanProgress: LocalLibraryScanProgress?,
     onSelect: () -> Unit,
     onLongClick: () -> Unit,
     onEdit: () -> Unit,
@@ -596,6 +603,12 @@ private fun ConnectionRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                scanProgress?.let { progress ->
+                    LocalLibraryScanProgressInline(
+                        progress = progress,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
             }
             IconButton(
                 enabled = isAvailable,

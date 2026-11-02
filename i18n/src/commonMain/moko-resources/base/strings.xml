@@ -2544,6 +2544,7 @@
     <string name="replacement_import_settings">Import inheritance and scope switches</string>
     <string name="local_library_scan_progress_discovering">Scanning folders…</string>
     <string name="local_library_scan_progress_indexing">Importing %1$d / %2$d</string>
+    <string name="local_library_scan_progress_indexing_percent">%1$d%% · %2$d / %3$d</string>
     <string name="local_library_scan_progress_finishing">Saving the library…</string>
     <string name="local_library_section_structure">Library structure</string>
     <string name="local_library_section_metadata">Naming and metadata</string>
