@@ -2865,6 +2865,29 @@ class LocalFolderSource(
         )
     }
 
+    /**
+     * A folder marker exists so the identity of a directory survives a move; the index already
+     * carries the identity that marker produced. Re-reading `.koharia/folder.json` costs a provider
+     * query and a file read per directory on every scan, so answer from the index while the
+     * directory itself is unchanged. Markers are still read and created whenever the library stores
+     * metadata next to the files, because then the marker is the writable copy.
+     */
+    private fun reusableFolderMarker(
+        previous: LocalLibraryItem?,
+        attributes: LocalScanFile?,
+        createMarkers: Boolean,
+    ): LocalFolderMarker? {
+        if (createMarkers) return null
+        val identity = previous?.folderIdentity ?: return null
+        val modifiedAt = attributes?.modifiedAt ?: return null
+        if (modifiedAt <= 0L || previous.modifiedAt != modifiedAt) return null
+        return LocalFolderMarker(
+            id = identity,
+            imageComic = previous.imageComic,
+            imageComicOverride = previous.imageComicOverride,
+        )
+    }
+
     private suspend fun candidateFolderEntries(
         root: ResolvedLocalLibraryRoot,
         reader: LocalScanDirectoryReader,
@@ -2883,7 +2906,13 @@ class LocalFolderSource(
             val content = children.filterNot { isLocalAuxiliaryFile(it.name) }
             val folderImages = scanFolderImages(directory, reader)
             val marker = path.takeIf(String::isNotEmpty)?.let {
-                runCatching { metadataStore.folderMarker(directory, createMarkers, entries) }.getOrNull()
+                reusableFolderMarker(
+                    previous = preferences.getIndex().itemsByLocation[root.config.id to path],
+                    attributes = reader.attributes[directory.uri],
+                    createMarkers = createMarkers,
+                ) ?: runCatching {
+                    metadataStore.folderMarker(directory, createMarkers, entries)
+                }.getOrNull()
             }
             val storedOverride = marker?.imageComicOverride
                 ?: preferences.getIndex().itemsByLocation[root.config.id to path]?.imageComicOverride
