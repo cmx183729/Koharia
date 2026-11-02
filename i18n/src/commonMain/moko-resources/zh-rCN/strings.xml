@@ -2408,6 +2408,10 @@
     <string name="local_library_scan_progress_indexing">正在入库 %1$d / %2$d</string>
     <string name="local_library_scan_progress_indexing_percent">%1$d%% · %2$d / %3$d</string>
     <string name="local_library_scan_progress_finishing">正在保存索引…</string>
+    <string name="local_gallery_published">发布于 %1$s</string>
+    <string name="local_gallery_days">%1$d 天前</string>
+    <string name="local_gallery_pages">%1$d 页</string>
+    <string name="local_gallery_open">打开画廊页面</string>
     <string name="local_library_section_structure">书库结构</string>
     <string name="local_library_section_metadata">命名与元数据</string>
     <string name="local_library_section_scanning">扫描</string>

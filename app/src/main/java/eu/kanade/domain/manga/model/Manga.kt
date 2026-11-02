@@ -45,6 +45,9 @@ fun Manga.toSManga(): SManga = SManga.create().also {
     it.status = status.toInt()
     it.thumbnail_url = thumbnailUrl
     it.initialized = initialized
+    // Carrying the memo back out keeps source-specific state (gallery identity, catalogue
+    // coordinates) alive across a scan that rebuilds the entry from disk.
+    it.memo = memo
 }
 
 fun Manga.copyFrom(other: SManga): Manga {

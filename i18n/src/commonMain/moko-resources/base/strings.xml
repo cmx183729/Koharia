@@ -2546,6 +2546,10 @@
     <string name="local_library_scan_progress_indexing">Importing %1$d / %2$d</string>
     <string name="local_library_scan_progress_indexing_percent">%1$d%% · %2$d / %3$d</string>
     <string name="local_library_scan_progress_finishing">Saving the library…</string>
+    <string name="local_gallery_published">Published %1$s</string>
+    <string name="local_gallery_days">%1$d days ago</string>
+    <string name="local_gallery_pages">%1$d pages</string>
+    <string name="local_gallery_open">Open the gallery page</string>
     <string name="local_library_section_structure">Library structure</string>
     <string name="local_library_section_metadata">Naming and metadata</string>
     <string name="local_library_section_scanning">Scanning</string>

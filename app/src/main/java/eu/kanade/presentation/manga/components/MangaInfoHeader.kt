@@ -70,6 +70,7 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -95,6 +96,7 @@ import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.util.system.copyToClipboard
 import koharia.connection.ConnectionSeriesMetadata
+import koharia.source.local.LocalGalleryMetadata
 import kotlinx.serialization.json.JsonObject
 import org.intellij.markdown.MarkdownElementTypes
 import org.intellij.markdown.MarkdownTokenTypes
@@ -592,6 +594,57 @@ private fun ColumnScope.MangaContentInfo(
     }
 
     ConnectionMetadataRow(memo = memo, textAlign = textAlign)
+    LocalGalleryRow(memo = memo, textAlign = textAlign)
+}
+
+/**
+ * Shows what an E-Hentai sidecar recorded about the gallery behind this entry: when it was
+ * published, how long ago that was, how many pages it holds, and a link back to it.
+ */
+@Composable
+private fun ColumnScope.LocalGalleryRow(
+    memo: JsonObject,
+    textAlign: TextAlign?,
+) {
+    val gallery = remember(memo) { LocalGalleryMetadata.fromMemo(memo) } ?: return
+
+    val infoParts = buildList {
+        gallery.publishedAt?.substringBefore(' ')?.let {
+            add(stringResource(MR.strings.local_gallery_published, it))
+        }
+        gallery.ageInDays()?.let {
+            add(stringResource(MR.strings.local_gallery_days, it))
+        }
+        gallery.pageCount?.takeIf { it > 0 }?.let {
+            add(stringResource(MR.strings.local_gallery_pages, it))
+        }
+    }
+
+    if (infoParts.isNotEmpty()) {
+        Text(
+            text = infoParts.joinToString(" • "),
+            modifier = Modifier
+                .fillMaxWidth()
+                .secondaryItemAlpha(),
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = textAlign,
+        )
+    }
+
+    val url = gallery.url
+    if (url != null) {
+        val uriHandler = LocalUriHandler.current
+        Text(
+            text = stringResource(MR.strings.local_gallery_open),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickableNoIndication { uriHandler.openUri(url) }
+                .secondaryItemAlpha(),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = textAlign,
+        )
+    }
 }
 
 @Composable

@@ -62,6 +62,7 @@ import koharia.document.toDocumentRenderSettings
 import koharia.domain.manga.model.toDomainManga
 import koharia.importing.IncomingMediaSessionLocator
 import koharia.media.LocalMediaFormats
+import koharia.scan.ArchiveMetadataParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -1653,7 +1654,7 @@ class LocalFolderSource(
             val override = preferences.getMetadataOverrides()[item.itemKey]
             val localOverride = override.takeUnless { role == LocalMetadataRole.FOLDER_CONTAINER }
             val candidates = buildList {
-                addAll(objectMetadataCandidates(resource, role))
+                addAll(objectMetadataCandidates(resource, role).candidates)
                 metadataStore.externalMetadata(
                     item.itemKey,
                     metadataDirectory(resource),
@@ -2395,9 +2396,11 @@ class LocalFolderSource(
                     ?: resource.relativePath,
             )
         }
-        objectMetadataCandidates(resource, role, scannedFiles).forEach {
+        val objectMetadata = objectMetadataCandidates(resource, role, scannedFiles)
+        objectMetadata.candidates.forEach {
             it.metadata.toLocalMetadataOverride().applyTo(manga)
         }
+        objectMetadata.gallery?.toMemo(manga.memo)?.let { manga.memo = it }
 
         val legacyRelativePath = listOf(resource.root.relativePath, resource.relativePath)
             .filter(String::isNotBlank)
@@ -2463,8 +2466,13 @@ class LocalFolderSource(
                     preferences.getIndex().itemsByLocation[root.id to chapterPath]?.locatorPath ?: chapterPath,
                 )
             }
-        objectMetadataCandidates(ResolvedLocalResource(root, directory, relativePath), LocalMetadataRole.SERIES, files)
-            .forEach { it.metadata.toLocalMetadataOverride().applyTo(manga) }
+        val objectMetadata = objectMetadataCandidates(
+            ResolvedLocalResource(root, directory, relativePath),
+            LocalMetadataRole.SERIES,
+            files,
+        )
+        objectMetadata.candidates.forEach { it.metadata.toLocalMetadataOverride().applyTo(manga) }
+        objectMetadata.gallery?.toMemo(manga.memo)?.let { manga.memo = it }
 
         val legacyRelativePath = listOf(root.relativePath, relativePath)
             .filter(String::isNotBlank)
@@ -2503,15 +2511,23 @@ class LocalFolderSource(
         )
     }
 
+    private data class ObjectMetadata(
+        val candidates: List<LocalMetadataCandidate> = emptyList(),
+        /** Gallery identity carried out of an E-Hentai sidecar, for the details screen and the shelf badge. */
+        val gallery: LocalGalleryMetadata? = null,
+    )
+
     private fun objectMetadataCandidates(
         resource: ResolvedLocalResource,
         role: LocalMetadataRole,
         scannedFiles: List<UniFile>? = null,
-    ): List<LocalMetadataCandidate> = buildList {
-        if (!role.isMetadataReadable()) return@buildList
+    ): ObjectMetadata {
+        if (!role.isMetadataReadable()) return ObjectMetadata()
+        val candidates = mutableListOf<LocalMetadataCandidate>()
+        var gallery: LocalGalleryMetadata? = null
         if (role == LocalMetadataRole.INDIVIDUAL_FILE) {
             readFileEmbeddedMetadata(resource.file)?.let {
-                add(LocalMetadataCandidate(it.toLibraryMetadata(), it.source))
+                candidates += LocalMetadataCandidate(it.toLibraryMetadata(), it.source)
             }
         }
         val directory = if (resource.file.isDirectory) resource.file else metadataDirectory(resource)
@@ -2524,28 +2540,54 @@ class LocalFolderSource(
             return scannedFiles?.firstOrNull { it.name.equals(name, true) } ?: directory?.findFile(name)
         }
         sidecar(COMIC_INFO_FILE)?.let { metadataStore.readStandard(it, LocalLibraryContentType.COMICS) }
-            ?.let { add(LocalMetadataCandidate(it.toLibraryMetadata(), MetadataSuggestionSource.SIDECAR)) }
-        val galleryMetadata = sidecar("ametadata.json") ?: sidecar("ametadata") ?: if (
-            role == LocalMetadataRole.FOLDER_IMAGE_SERIES
-        ) {
-            scannedFiles?.firstOrNull { it.name.equals("ametadata.json", true) || it.name.equals("ametadata", true) }
-                ?: directory?.findFile("ametadata.json") ?: directory?.findFile("ametadata")
-        } else {
-            null
-        }
-        galleryMetadata?.let { file ->
-            runCatching {
+            ?.let { candidates += LocalMetadataCandidate(it.toLibraryMetadata(), MetadataSuggestionSource.SIDECAR) }
+        gallerySidecar(role, scannedFiles, directory)?.let { (file, name) ->
+            val parsed = runCatching {
                 file.openInputStream().use { input ->
-                    koharia.scan.ArchiveMetadataParser.ametadata(input).toLocalEmbeddedMetadata()
+                    if (name.startsWith("ametadata")) {
+                        ArchiveMetadataParser.ametadata(input)
+                    } else {
+                        ArchiveMetadataParser.legacyMetadata(input)
+                    }
                 }
-            }.getOrNull()?.let {
-                add(LocalMetadataCandidate(it.toLibraryMetadata(), MetadataSuggestionSource.JHENTAI_AMETADATA))
+            }.getOrNull()
+            if (parsed != null) {
+                gallery = parsed.toLocalGalleryMetadata()
+                candidates += LocalMetadataCandidate(
+                    parsed.toLocalEmbeddedMetadata().toLibraryMetadata(),
+                    MetadataSuggestionSource.JHENTAI_AMETADATA,
+                )
+            } else {
+                logcat(LogPriority.WARN) { "Unable to read the gallery metadata beside ${resource.relativePath}" }
             }
         }
         sidecar("metadata.opf")?.let(::readOpfFile)?.let {
             val value = if (role == LocalMetadataRole.SERIES) it.forSeriesDisplay(true) else it
-            add(LocalMetadataCandidate(value.toLibraryMetadata(), MetadataSuggestionSource.SIDECAR))
+            candidates += LocalMetadataCandidate(value.toLibraryMetadata(), MetadataSuggestionSource.SIDECAR)
         }
+        return ObjectMetadata(candidates, gallery)
+    }
+
+    /**
+     * Finds the E-Hentai gallery JSON, preferring the listing that was already read over another
+     * provider round trip. Newer archivers write `ametadata`, older ones write `metadata`.
+     */
+    private fun gallerySidecar(
+        role: LocalMetadataRole,
+        scannedFiles: List<UniFile>?,
+        directory: UniFile?,
+    ): Pair<UniFile, String>? {
+        val names = when (role) {
+            LocalMetadataRole.SERIES -> GALLERY_SIDECAR_NAMES
+            LocalMetadataRole.FOLDER_IMAGE_SERIES ->
+                GALLERY_SIDECAR_NAMES.map { ".koharia-image-series.$it" } + GALLERY_SIDECAR_NAMES
+            else -> return null
+        }
+        if (scannedFiles != null) {
+            val byName = scannedFiles.associateBy { it.name.orEmpty().lowercase() }
+            names.firstNotNullOfOrNull { name -> byName[name]?.let { it to name } }?.let { return it }
+        }
+        return names.firstNotNullOfOrNull { name -> directory?.findFile(name)?.let { it to name } }
     }
 
     private fun clearComicMetadata(manga: SManga) {
@@ -2787,8 +2829,7 @@ class LocalFolderSource(
     }
 
     private fun scanImage(entry: LocalScanFile): Boolean = !entry.directory &&
-        !entry.name.equals("ametadata", ignoreCase = true) &&
-        !entry.name.equals("ametadata.json", ignoreCase = true) &&
+        !isGallerySidecarName(entry.name) &&
         (
             LocalMediaFormats.isImage(entry.extension) ||
                 (
@@ -3872,6 +3913,14 @@ class LocalFolderSource(
 
         /** Marks a candidate whose page count cannot be read from the listing. */
         private const val SCAN_UNKNOWN_IMAGE_COUNT = -1
+
+        /**
+         * Gallery sidecars in preference order. The newer archivers write `ametadata`, the older
+         * ones write `metadata`; both are JSON and neither is a page.
+         */
+        private val GALLERY_SIDECAR_NAMES = listOf("ametadata.json", "ametadata", "metadata.json", "metadata")
+
+        private fun isGallerySidecarName(name: String) = GALLERY_SIDECAR_NAMES.any { name.equals(it, true) }
     }
 
     private data class ScanCandidate(
