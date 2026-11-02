@@ -1,0 +1,41 @@
+CREATE TABLE local_library_item (
+    source_id INTEGER NOT NULL,
+    item_key TEXT NOT NULL,
+    root_id TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    format TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    modified_at INTEGER NOT NULL,
+    fingerprint TEXT,
+    locator_path TEXT NOT NULL,
+    document_identity TEXT,
+    folder_identity TEXT,
+    missing INTEGER NOT NULL DEFAULT 0,
+    image_comic INTEGER NOT NULL DEFAULT 0,
+    image_comic_override INTEGER,
+    virtual_type TEXT,
+    backing_path TEXT,
+    PRIMARY KEY (source_id, item_key)
+);
+
+CREATE INDEX local_library_item_location_index ON local_library_item(source_id, root_id, relative_path);
+
+CREATE INDEX local_library_item_kind_index ON local_library_item(source_id, root_id, kind, missing);
+
+CREATE INDEX local_library_item_fingerprint_index ON local_library_item(source_id, fingerprint);
+
+CREATE TABLE local_library_pending_refresh (
+    source_id INTEGER NOT NULL,
+    item_key TEXT NOT NULL,
+    PRIMARY KEY (source_id, item_key)
+);
+
+CREATE TABLE local_library_meta (
+    source_id INTEGER NOT NULL PRIMARY KEY,
+    scanned_at INTEGER NOT NULL DEFAULT 0,
+    schema_version INTEGER NOT NULL DEFAULT 6,
+    title_purge_regex TEXT NOT NULL DEFAULT '',
+    folder_operation TEXT
+);

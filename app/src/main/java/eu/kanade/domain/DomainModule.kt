@@ -115,6 +115,9 @@ class DomainModule : InjektModule {
         addSingletonFactory<koharia.domain.storage.LibraryStorageRepository> {
             koharia.data.storage.LibraryStorageRepositoryImpl(get())
         }
+        addSingletonFactory<koharia.domain.local.LocalLibraryIndexRepository> {
+            koharia.data.local.LocalLibraryIndexRepositoryImpl(get())
+        }
         addSingletonFactory<koharia.domain.suwayomi.SuwayomiRepository> {
             koharia.data.suwayomi.SuwayomiRepositoryImpl(get())
         }

@@ -8,12 +8,15 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 import java.net.URI
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -330,21 +333,6 @@ internal class LocalLibraryConfigCache(
     }
 }
 
-internal class LocalLibraryIndexCache(private val json: Json) {
-    private var serialized: String? = null
-    private var index = LocalLibraryIndex()
-
-    @Synchronized
-    fun get(value: String?): LocalLibraryIndex {
-        if (value != serialized) {
-            index = value?.let { runCatching { json.decodeFromString<LocalLibraryIndex>(it) }.getOrNull() }
-                ?: LocalLibraryIndex()
-            serialized = value
-        }
-        return index
-    }
-}
-
 /**
  * Decoding the whole overrides map is O(library size) and it happens several times per item
  * during a scan, so keep the last decode and only redo it when the stored JSON changes.
@@ -362,25 +350,6 @@ internal class LocalMetadataOverridesCache(private val json: Json) {
             serialized = value
         }
         return overrides
-    }
-}
-
-/**
- * Pending chapter refreshes change one key at a time while the index JSON holds every item in the
- * library, so they are tracked in their own small key. A full index write clears the override and
- * the index copy becomes authoritative again.
- */
-internal class LocalPendingChapterRefreshCache(private val json: Json) {
-    private var serialized: String? = null
-    private var pending: Set<String>? = null
-
-    @Synchronized
-    fun get(value: String?): Set<String>? {
-        if (value != serialized) {
-            pending = value?.let { runCatching { json.decodeFromString<Set<String>>(it) }.getOrNull() }
-            serialized = value
-        }
-        return pending
     }
 }
 
@@ -428,9 +397,10 @@ class LocalLibraryPreferences(
     private val preferences: SharedPreferences = sourcePreferences("source_$sourceId"),
 ) {
     private val configCache = LocalLibraryConfigCache(json, sourceId)
-    private val indexCache = LocalLibraryIndexCache(json)
     private val metadataOverridesCache = LocalMetadataOverridesCache(json)
-    private val pendingChapterRefreshCache = LocalPendingChapterRefreshCache(json)
+
+    // Resolved lazily: some tests build this class through mockkConstructor without a DI graph.
+    private val indexStore: LocalLibraryIndexStore by lazy { LocalLibraryIndexStore(sourceId, Injekt.get()) }
 
     fun getConfig(): LocalLibraryConfig = synchronized(preferences) {
         val storedValue = preferences.getString(KEY_CONFIG, null)
@@ -490,15 +460,21 @@ class LocalLibraryPreferences(
 
     internal fun progressResourceChanges(): Flow<Unit> = callbackFlow {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == KEY_CONFIG || key == KEY_INDEX ||
+            if (key == KEY_CONFIG ||
                 koharia.storage.NetworkStoragePreferences.isIdentityPreference(key)
             ) {
                 trySend(Unit)
             }
         }
         preferences.registerOnSharedPreferenceChangeListener(listener)
+        val indexChanges = launch {
+            LocalLibraryIndexStore.changes(sourceId).collect { trySend(Unit) }
+        }
         trySend(Unit)
-        awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+        awaitClose {
+            indexChanges.cancel()
+            preferences.unregisterOnSharedPreferenceChangeListener(listener)
+        }
     }
 
     fun libraryStateChanges(): Flow<Unit> = callbackFlow {
@@ -510,30 +486,17 @@ class LocalLibraryPreferences(
         awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
     }
 
-    fun getIndex(): LocalLibraryIndex {
-        val index = indexCache.get(preferences.getString(KEY_INDEX, null))
-        val pending = pendingChapterRefreshCache.get(preferences.getString(KEY_PENDING_CHAPTER_REFRESH, null))
-            ?: return index
-        return index.copy(pendingChapterRefreshItemKeys = pending)
-    }
+    fun getIndex(): LocalLibraryIndex = indexStore.load()
 
     @Synchronized
     fun setIndex(index: LocalLibraryIndex) {
-        preferences.edit()
-            .putString(KEY_INDEX, json.encodeToString(index))
-            .remove(KEY_PENDING_CHAPTER_REFRESH)
-            .apply()
+        indexStore.store(index)
     }
 
     @Synchronized
     fun clearPendingChapterRefresh(itemKey: String) {
-        val pending = getIndex().pendingChapterRefreshItemKeys
-        if (itemKey !in pending) return
-        // Re-encoding the whole index to drop one key stalls every chapter the reader opens, so the
-        // reduced set goes to its own key and shadows the index copy until the next full write.
-        preferences.edit()
-            .putString(KEY_PENDING_CHAPTER_REFRESH, json.encodeToString(pending - itemKey))
-            .apply()
+        // The stored set is a table row now, so dropping one key no longer re-encodes the library.
+        indexStore.removePendingChapterRefresh(itemKey)
     }
 
     fun getMetadataOverrides(): Map<String, LocalMetadataOverride> =
@@ -551,16 +514,13 @@ class LocalLibraryPreferences(
     @Synchronized
     internal fun removeDeletedItems(keys: Set<String>) {
         val index = getIndex()
+        indexStore.store(
+            index.copy(
+                items = index.items.filterNot { it.itemKey in keys },
+                pendingChapterRefreshItemKeys = index.pendingChapterRefreshItemKeys - keys,
+            ),
+        )
         preferences.edit()
-            .putString(
-                KEY_INDEX,
-                json.encodeToString(
-                    index.copy(
-                        items = index.items.filterNot { it.itemKey in keys },
-                        pendingChapterRefreshItemKeys = index.pendingChapterRefreshItemKeys - keys,
-                    ),
-                ),
-            )
             .putString(KEY_METADATA_OVERRIDES, json.encodeToString(getMetadataOverrides() - keys))
             .putString(KEY_BOOKSHELF_ASSIGNMENTS, json.encodeToString(getBookshelfAssignments() - keys))
             .apply()
@@ -573,19 +533,17 @@ class LocalLibraryPreferences(
     }
 
     internal fun recordFolderOperation(value: String?) {
-        check(preferences.edit().putString("local_folder_operation", value).commit())
+        indexStore.setFolderOperation(value)
     }
 
-    internal fun pendingFolderOperation(): String? = preferences.getString("local_folder_operation", null)
+    internal fun pendingFolderOperation(): String? = indexStore.pendingFolderOperation()
 
+    /**
+     * The index and the operation marker share one row, so a crash between the two writes cannot
+     * leave a scan-time file move marked as done while the index still points at the old path.
+     */
     internal fun commitFolderOperation(index: LocalLibraryIndex, operation: String?) {
-        check(
-            preferences.edit()
-                .putString(KEY_INDEX, json.encodeToString(index))
-                .putString("local_folder_operation", operation)
-                .remove(KEY_PENDING_CHAPTER_REFRESH)
-                .commit(),
-        )
+        indexStore.commitFolderOperation(index, operation)
     }
 
     internal fun metadataRevision(key: String): String? = preferences.getString("local_metadata_revision_$key", null)
@@ -722,8 +680,6 @@ class LocalLibraryPreferences(
     companion object {
         private const val KEY_CONFIG = "local_library_config"
         private const val KEY_CUSTOM_COVER_URLS = "local_custom_cover_urls"
-        private const val KEY_INDEX = "local_library_index"
-        private const val KEY_PENDING_CHAPTER_REFRESH = "local_library_pending_chapter_refresh"
         private const val KEY_METADATA_OVERRIDES = "local_library_metadata_overrides"
         private const val KEY_BOOKSHELF_ASSIGNMENTS = "local_library_bookshelf_assignments"
     }
