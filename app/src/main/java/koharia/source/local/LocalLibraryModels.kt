@@ -333,26 +333,6 @@ internal class LocalLibraryConfigCache(
     }
 }
 
-/**
- * Decoding the whole overrides map is O(library size) and it happens several times per item
- * during a scan, so keep the last decode and only redo it when the stored JSON changes.
- */
-internal class LocalMetadataOverridesCache(private val json: Json) {
-    private var serialized: String? = null
-    private var overrides: Map<String, LocalMetadataOverride> = emptyMap()
-
-    @Synchronized
-    fun get(value: String?): Map<String, LocalMetadataOverride> {
-        if (value != serialized) {
-            overrides = value
-                ?.let { runCatching { json.decodeFromString<Map<String, LocalMetadataOverride>>(it) }.getOrNull() }
-                ?: emptyMap()
-            serialized = value
-        }
-        return overrides
-    }
-}
-
 @Serializable
 data class LocalLibraryManifest(
     val libraryId: String,
@@ -397,10 +377,13 @@ class LocalLibraryPreferences(
     private val preferences: SharedPreferences = sourcePreferences("source_$sourceId"),
 ) {
     private val configCache = LocalLibraryConfigCache(json, sourceId)
-    private val metadataOverridesCache = LocalMetadataOverridesCache(json)
 
     // Resolved lazily: some tests build this class through mockkConstructor without a DI graph.
     private val indexStore: LocalLibraryIndexStore by lazy { LocalLibraryIndexStore(sourceId, Injekt.get()) }
+
+    private val metadataStore: LocalLibraryMetadataStore by lazy {
+        LocalLibraryMetadataStore(sourceId, Injekt.get())
+    }
 
     fun getConfig(): LocalLibraryConfig = synchronized(preferences) {
         val storedValue = preferences.getString(KEY_CONFIG, null)
@@ -439,13 +422,9 @@ class LocalLibraryPreferences(
             true
         }
 
-    internal fun rememberCustomCover(url: String) = synchronized(preferences) {
-        val urls = customCoverUrls()
-        if (url !in urls) preferences.edit().putStringSet(KEY_CUSTOM_COVER_URLS, urls + url).apply()
-    }
+    internal fun rememberCustomCover(url: String) = metadataStore.rememberCustomCover(url)
 
-    internal fun customCoverUrls(): Set<String> =
-        preferences.getStringSet(KEY_CUSTOM_COVER_URLS, emptySet()).orEmpty().toSet()
+    internal fun customCoverUrls(): Set<String> = metadataStore.customCoverUrls()
 
     fun configChanges(): Flow<LocalLibraryConfig> = callbackFlow {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -479,11 +458,17 @@ class LocalLibraryPreferences(
 
     fun libraryStateChanges(): Flow<Unit> = callbackFlow {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == KEY_CONFIG || key == KEY_BOOKSHELF_ASSIGNMENTS) trySend(Unit)
+            if (key == KEY_CONFIG) trySend(Unit)
         }
         preferences.registerOnSharedPreferenceChangeListener(listener)
+        val assignmentChanges = launch {
+            LocalLibraryMetadataStore.changes(sourceId).collect { trySend(Unit) }
+        }
         trySend(Unit)
-        awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+        awaitClose {
+            assignmentChanges.cancel()
+            preferences.unregisterOnSharedPreferenceChangeListener(listener)
+        }
     }
 
     fun getIndex(): LocalLibraryIndex = indexStore.load()
@@ -499,17 +484,12 @@ class LocalLibraryPreferences(
         indexStore.removePendingChapterRefresh(itemKey)
     }
 
-    fun getMetadataOverrides(): Map<String, LocalMetadataOverride> =
-        metadataOverridesCache.get(preferences.getString(KEY_METADATA_OVERRIDES, null))
+    fun getMetadataOverrides(): Map<String, LocalMetadataOverride> = metadataStore.overrides()
 
-    internal fun folderDisplaySettings(key: String): LocalFolderDisplaySettings =
-        preferences.getString("local_folder_display_$key", null)
-            ?.let { runCatching { json.decodeFromString<LocalFolderDisplaySettings>(it) }.getOrNull() }
-            ?: LocalFolderDisplaySettings()
+    internal fun folderDisplaySettings(key: String): LocalFolderDisplaySettings = metadataStore.folderDisplay(key)
 
-    internal fun setFolderDisplaySettings(key: String, value: LocalFolderDisplaySettings) {
-        preferences.edit().putString("local_folder_display_$key", json.encodeToString(value)).apply()
-    }
+    internal fun setFolderDisplaySettings(key: String, value: LocalFolderDisplaySettings) =
+        metadataStore.setFolderDisplay(key, value)
 
     @Synchronized
     internal fun removeDeletedItems(keys: Set<String>) {
@@ -520,17 +500,11 @@ class LocalLibraryPreferences(
                 pendingChapterRefreshItemKeys = index.pendingChapterRefreshItemKeys - keys,
             ),
         )
-        preferences.edit()
-            .putString(KEY_METADATA_OVERRIDES, json.encodeToString(getMetadataOverrides() - keys))
-            .putString(KEY_BOOKSHELF_ASSIGNMENTS, json.encodeToString(getBookshelfAssignments() - keys))
-            .apply()
+        metadataStore.removeItems(keys)
     }
 
-    fun setMetadataOverride(itemKey: String, value: LocalMetadataOverride) = synchronized(preferences) {
-        val values = getMetadataOverrides().toMutableMap()
-        values[itemKey] = value
-        preferences.edit().putString(KEY_METADATA_OVERRIDES, json.encodeToString(values)).apply()
-    }
+    fun setMetadataOverride(itemKey: String, value: LocalMetadataOverride) =
+        metadataStore.putOverride(itemKey, value)
 
     internal fun recordFolderOperation(value: String?) {
         indexStore.setFolderOperation(value)
@@ -546,23 +520,14 @@ class LocalLibraryPreferences(
         indexStore.commitFolderOperation(index, operation)
     }
 
-    internal fun metadataRevision(key: String): String? = preferences.getString("local_metadata_revision_$key", null)
+    internal fun metadataRevision(key: String): String? = metadataStore.metadataRevision(key)
 
-    internal fun setMetadataRevision(key: String, revision: String) {
-        preferences.edit().putString("local_metadata_revision_$key", revision).apply()
-    }
+    internal fun setMetadataRevision(key: String, revision: String) = metadataStore.setMetadataRevision(key, revision)
 
-    fun getBookshelfAssignments(): Map<String, String> {
-        return preferences.getString(KEY_BOOKSHELF_ASSIGNMENTS, null)
-            ?.let { runCatching { json.decodeFromString<Map<String, String>>(it) }.getOrNull() }
-            ?: emptyMap()
-    }
+    fun getBookshelfAssignments(): Map<String, String> = metadataStore.bookshelfAssignments()
 
-    fun setBookshelfAssignment(itemKey: String, bookshelfId: String) {
-        val assignments = getBookshelfAssignments().toMutableMap()
-        assignments[itemKey] = bookshelfId
-        preferences.edit().putString(KEY_BOOKSHELF_ASSIGNMENTS, json.encodeToString(assignments)).apply()
-    }
+    fun setBookshelfAssignment(itemKey: String, bookshelfId: String) =
+        metadataStore.setBookshelfAssignment(itemKey, bookshelfId)
 
     @Synchronized
     internal fun saveLibraryDraft(config: LocalLibraryConfig, assignments: Map<String, String>) {
@@ -590,25 +555,17 @@ class LocalLibraryPreferences(
             .distinctBy(LocalLibraryRootConfig::id)
             .filterNot { old -> config.roots.any { it.id == old.id } }
         setConfig(config.copy(detachedRoots = detached))
-        preferences.edit()
-            .putString(KEY_BOOKSHELF_ASSIGNMENTS, json.encodeToString(assignments - removedKeys))
-            .apply()
+        metadataStore.replaceBookshelfAssignments(assignments - removedKeys)
     }
 
-    fun clearBookshelfAssignment(itemKey: String) {
-        val assignments = getBookshelfAssignments().toMutableMap()
-        if (assignments.remove(itemKey) == null) return
-        preferences.edit().putString(KEY_BOOKSHELF_ASSIGNMENTS, json.encodeToString(assignments)).apply()
-    }
+    fun clearBookshelfAssignment(itemKey: String) = metadataStore.clearBookshelfAssignment(itemKey)
 
     fun removeBookshelf(bookshelfId: String) {
         val config = getConfig()
         val assignments = getBookshelfAssignments()
         val removal = config.withoutBookshelf(bookshelfId, assignments) ?: return
         setConfig(removal.config)
-        preferences.edit()
-            .putString(KEY_BOOKSHELF_ASSIGNMENTS, json.encodeToString(removal.assignments))
-            .apply()
+        metadataStore.replaceBookshelfAssignments(removal.assignments)
     }
 
     fun rootDirectories(context: android.content.Context): List<ResolvedLocalLibraryRoot> {
@@ -661,14 +618,7 @@ class LocalLibraryPreferences(
         )
         val removedKeys = getIndex().items.filter { it.rootId == rootId }.mapTo(mutableSetOf()) { it.itemKey }
         setIndex(getIndex().copy(items = getIndex().items.filterNot { it.rootId == rootId }))
-        if (removedKeys.isNotEmpty()) {
-            val overrides = getMetadataOverrides().filterKeys { it !in removedKeys }
-            val assignments = getBookshelfAssignments().filterKeys { it !in removedKeys }
-            preferences.edit()
-                .putString(KEY_METADATA_OVERRIDES, json.encodeToString(overrides))
-                .putString(KEY_BOOKSHELF_ASSIGNMENTS, json.encodeToString(assignments))
-                .apply()
-        }
+        metadataStore.removeItems(removedKeys)
     }
 
     private fun selectedTreeDirectory(context: android.content.Context, value: String): UniFile? {
@@ -679,9 +629,6 @@ class LocalLibraryPreferences(
 
     companion object {
         private const val KEY_CONFIG = "local_library_config"
-        private const val KEY_CUSTOM_COVER_URLS = "local_custom_cover_urls"
-        private const val KEY_METADATA_OVERRIDES = "local_library_metadata_overrides"
-        private const val KEY_BOOKSHELF_ASSIGNMENTS = "local_library_bookshelf_assignments"
     }
 }
 

@@ -1,0 +1,149 @@
+CREATE TABLE local_library_metadata (
+    source_id INTEGER NOT NULL,
+    item_key TEXT NOT NULL,
+    title TEXT,
+    author TEXT,
+    artist TEXT,
+    description TEXT,
+    genres TEXT NOT NULL DEFAULT '[]',
+    status INTEGER,
+    edited_fields TEXT NOT NULL DEFAULT '[]',
+    locked_fields TEXT NOT NULL DEFAULT '[]',
+    origin TEXT NOT NULL DEFAULT 'user',
+    updated_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (source_id, item_key)
+);
+
+CREATE TABLE local_library_folder_display (
+    source_id INTEGER NOT NULL,
+    item_key TEXT NOT NULL,
+    display_name TEXT,
+    author TEXT,
+    description TEXT,
+    tags TEXT NOT NULL DEFAULT '[]',
+    locked_fields TEXT NOT NULL DEFAULT '[]',
+    PRIMARY KEY (source_id, item_key)
+);
+
+CREATE TABLE local_library_bookshelf_assignment (
+    source_id INTEGER NOT NULL,
+    item_key TEXT NOT NULL,
+    bookshelf_id TEXT NOT NULL,
+    PRIMARY KEY (source_id, item_key)
+);
+
+CREATE TABLE local_library_custom_cover (
+    source_id INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    PRIMARY KEY (source_id, url)
+);
+
+CREATE TABLE local_library_metadata_revision (
+    source_id INTEGER NOT NULL,
+    item_key TEXT NOT NULL,
+    revision TEXT NOT NULL,
+    PRIMARY KEY (source_id, item_key)
+);
+
+getMetadata:
+SELECT * FROM local_library_metadata WHERE source_id = :sourceId;
+
+putMetadata:
+INSERT OR REPLACE INTO local_library_metadata(
+    source_id,
+    item_key,
+    title,
+    author,
+    artist,
+    description,
+    genres,
+    status,
+    edited_fields,
+    locked_fields,
+    origin,
+    updated_at
+)
+VALUES (
+    :sourceId,
+    :itemKey,
+    :title,
+    :author,
+    :artist,
+    :description,
+    :genres,
+    :status,
+    :editedFields,
+    :lockedFields,
+    :origin,
+    :updatedAt
+);
+
+removeMetadata:
+DELETE FROM local_library_metadata WHERE source_id = :sourceId AND item_key IN :itemKeys;
+
+clearMetadata:
+DELETE FROM local_library_metadata WHERE source_id = :sourceId;
+
+getFolderDisplay:
+SELECT * FROM local_library_folder_display WHERE source_id = :sourceId;
+
+putFolderDisplay:
+INSERT OR REPLACE INTO local_library_folder_display(
+    source_id,
+    item_key,
+    display_name,
+    author,
+    description,
+    tags,
+    locked_fields
+)
+VALUES (
+    :sourceId,
+    :itemKey,
+    :displayName,
+    :author,
+    :description,
+    :tags,
+    :lockedFields
+);
+
+removeFolderDisplay:
+DELETE FROM local_library_folder_display WHERE source_id = :sourceId AND item_key IN :itemKeys;
+
+clearFolderDisplay:
+DELETE FROM local_library_folder_display WHERE source_id = :sourceId;
+
+getBookshelfAssignments:
+SELECT item_key, bookshelf_id FROM local_library_bookshelf_assignment WHERE source_id = :sourceId;
+
+putBookshelfAssignment:
+INSERT OR REPLACE INTO local_library_bookshelf_assignment(source_id, item_key, bookshelf_id)
+VALUES (:sourceId, :itemKey, :bookshelfId);
+
+removeBookshelfAssignments:
+DELETE FROM local_library_bookshelf_assignment WHERE source_id = :sourceId AND item_key IN :itemKeys;
+
+clearBookshelfAssignments:
+DELETE FROM local_library_bookshelf_assignment WHERE source_id = :sourceId;
+
+getCustomCovers:
+SELECT url FROM local_library_custom_cover WHERE source_id = :sourceId;
+
+putCustomCover:
+INSERT OR REPLACE INTO local_library_custom_cover(source_id, url) VALUES (:sourceId, :url);
+
+clearCustomCovers:
+DELETE FROM local_library_custom_cover WHERE source_id = :sourceId;
+
+getMetadataRevisions:
+SELECT item_key, revision FROM local_library_metadata_revision WHERE source_id = :sourceId;
+
+putMetadataRevision:
+INSERT OR REPLACE INTO local_library_metadata_revision(source_id, item_key, revision)
+VALUES (:sourceId, :itemKey, :revision);
+
+removeMetadataRevisions:
+DELETE FROM local_library_metadata_revision WHERE source_id = :sourceId AND item_key IN :itemKeys;
+
+clearMetadataRevisions:
+DELETE FROM local_library_metadata_revision WHERE source_id = :sourceId;

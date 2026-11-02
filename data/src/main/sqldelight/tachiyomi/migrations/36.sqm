@@ -1,0 +1,46 @@
+CREATE TABLE local_library_metadata (
+    source_id INTEGER NOT NULL,
+    item_key TEXT NOT NULL,
+    title TEXT,
+    author TEXT,
+    artist TEXT,
+    description TEXT,
+    genres TEXT NOT NULL DEFAULT '[]',
+    status INTEGER,
+    edited_fields TEXT NOT NULL DEFAULT '[]',
+    locked_fields TEXT NOT NULL DEFAULT '[]',
+    origin TEXT NOT NULL DEFAULT 'user',
+    updated_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (source_id, item_key)
+);
+
+CREATE TABLE local_library_folder_display (
+    source_id INTEGER NOT NULL,
+    item_key TEXT NOT NULL,
+    display_name TEXT,
+    author TEXT,
+    description TEXT,
+    tags TEXT NOT NULL DEFAULT '[]',
+    locked_fields TEXT NOT NULL DEFAULT '[]',
+    PRIMARY KEY (source_id, item_key)
+);
+
+CREATE TABLE local_library_bookshelf_assignment (
+    source_id INTEGER NOT NULL,
+    item_key TEXT NOT NULL,
+    bookshelf_id TEXT NOT NULL,
+    PRIMARY KEY (source_id, item_key)
+);
+
+CREATE TABLE local_library_custom_cover (
+    source_id INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    PRIMARY KEY (source_id, url)
+);
+
+CREATE TABLE local_library_metadata_revision (
+    source_id INTEGER NOT NULL,
+    item_key TEXT NOT NULL,
+    revision TEXT NOT NULL,
+    PRIMARY KEY (source_id, item_key)
+);

@@ -36,7 +36,7 @@ object RegistryMigrationRuntimeFixture {
             check(registry.provider(profile.providerId)?.id == provider)
         }
         status.accept("six-provider-registry;profile-json-roundtrip")
-        check(Database.Schema.version == 36L) { "Update the migration fixture for the current schema" }
+        check(Database.Schema.version == 37L) { "Update the migration fixture for the current schema" }
         val name = "registry-migration-runtime-${UUID.randomUUID()}.db"
         check(!context.getDatabasePath(name).exists())
         val previous = object : SqlSchema<QueryResult.AsyncValue<Unit>> {
