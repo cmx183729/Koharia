@@ -365,6 +365,25 @@ internal class LocalMetadataOverridesCache(private val json: Json) {
     }
 }
 
+/**
+ * Pending chapter refreshes change one key at a time while the index JSON holds every item in the
+ * library, so they are tracked in their own small key. A full index write clears the override and
+ * the index copy becomes authoritative again.
+ */
+internal class LocalPendingChapterRefreshCache(private val json: Json) {
+    private var serialized: String? = null
+    private var pending: Set<String>? = null
+
+    @Synchronized
+    fun get(value: String?): Set<String>? {
+        if (value != serialized) {
+            pending = value?.let { runCatching { json.decodeFromString<Set<String>>(it) }.getOrNull() }
+            serialized = value
+        }
+        return pending
+    }
+}
+
 @Serializable
 data class LocalLibraryManifest(
     val libraryId: String,
@@ -411,6 +430,7 @@ class LocalLibraryPreferences(
     private val configCache = LocalLibraryConfigCache(json, sourceId)
     private val indexCache = LocalLibraryIndexCache(json)
     private val metadataOverridesCache = LocalMetadataOverridesCache(json)
+    private val pendingChapterRefreshCache = LocalPendingChapterRefreshCache(json)
 
     fun getConfig(): LocalLibraryConfig = synchronized(preferences) {
         val storedValue = preferences.getString(KEY_CONFIG, null)
@@ -491,23 +511,29 @@ class LocalLibraryPreferences(
     }
 
     fun getIndex(): LocalLibraryIndex {
-        return indexCache.get(preferences.getString(KEY_INDEX, null))
+        val index = indexCache.get(preferences.getString(KEY_INDEX, null))
+        val pending = pendingChapterRefreshCache.get(preferences.getString(KEY_PENDING_CHAPTER_REFRESH, null))
+            ?: return index
+        return index.copy(pendingChapterRefreshItemKeys = pending)
     }
 
     @Synchronized
     fun setIndex(index: LocalLibraryIndex) {
-        preferences.edit().putString(KEY_INDEX, json.encodeToString(index)).apply()
+        preferences.edit()
+            .putString(KEY_INDEX, json.encodeToString(index))
+            .remove(KEY_PENDING_CHAPTER_REFRESH)
+            .apply()
     }
 
     @Synchronized
     fun clearPendingChapterRefresh(itemKey: String) {
-        val index = getIndex()
-        if (itemKey !in index.pendingChapterRefreshItemKeys) return
-        setIndex(
-            index.copy(
-                pendingChapterRefreshItemKeys = index.pendingChapterRefreshItemKeys - itemKey,
-            ),
-        )
+        val pending = getIndex().pendingChapterRefreshItemKeys
+        if (itemKey !in pending) return
+        // Re-encoding the whole index to drop one key stalls every chapter the reader opens, so the
+        // reduced set goes to its own key and shadows the index copy until the next full write.
+        preferences.edit()
+            .putString(KEY_PENDING_CHAPTER_REFRESH, json.encodeToString(pending - itemKey))
+            .apply()
     }
 
     fun getMetadataOverrides(): Map<String, LocalMetadataOverride> =
@@ -557,6 +583,7 @@ class LocalLibraryPreferences(
             preferences.edit()
                 .putString(KEY_INDEX, json.encodeToString(index))
                 .putString("local_folder_operation", operation)
+                .remove(KEY_PENDING_CHAPTER_REFRESH)
                 .commit(),
         )
     }
@@ -696,6 +723,7 @@ class LocalLibraryPreferences(
         private const val KEY_CONFIG = "local_library_config"
         private const val KEY_CUSTOM_COVER_URLS = "local_custom_cover_urls"
         private const val KEY_INDEX = "local_library_index"
+        private const val KEY_PENDING_CHAPTER_REFRESH = "local_library_pending_chapter_refresh"
         private const val KEY_METADATA_OVERRIDES = "local_library_metadata_overrides"
         private const val KEY_BOOKSHELF_ASSIGNMENTS = "local_library_bookshelf_assignments"
     }
