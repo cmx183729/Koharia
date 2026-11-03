@@ -44372,10 +44372,6 @@ SPLkoharia/source/local/LocalLibraryIndex;->getChaptersBySeriesKey()Ljava/util/M
 SPLkoharia/source/local/LocalLibraryIndex;->getItemsByKey()Ljava/util/Map;
 SPLkoharia/source/local/LocalLibraryIndex;->getItemsByLocator()Ljava/util/Map;
 SPLkoharia/source/local/LocalLibraryIndex;->getLibraryItemsByKey()Ljava/util/Map;
-Lkoharia/source/local/LocalLibraryIndexCache;
-SPLkoharia/source/local/LocalLibraryIndexCache;-><clinit>()V
-SPLkoharia/source/local/LocalLibraryIndexCache;-><init>(Lkotlinx/serialization/json/Json;)V
-SPLkoharia/source/local/LocalLibraryIndexCache;->get(Ljava/lang/String;)Lkoharia/source/local/LocalLibraryIndex;
 Lkoharia/source/local/LocalLibraryItem$$ExternalSyntheticLambda0;
 SPLkoharia/source/local/LocalLibraryItem$$ExternalSyntheticLambda0;-><init>()V
 SPLkoharia/source/local/LocalLibraryItem$$ExternalSyntheticLambda0;->invoke()Ljava/lang/Object;

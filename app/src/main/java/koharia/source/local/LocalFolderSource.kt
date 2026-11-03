@@ -1329,7 +1329,7 @@ class LocalFolderSource(
                     ?: resource.relativePath,
             )
             val modifiedAt = resource.file.lastModified()
-            indexedItem?.let { preferences.clearPendingChapterRefresh(it.itemKey) }
+            preferences.clearPendingChapterRefresh(indexedItem.itemKey)
             return@withIOContext listOf(
                 SChapter.create().apply {
                     url = chapterUrl
@@ -2215,31 +2215,6 @@ class LocalFolderSource(
             }
         }
         return item?.takeIf { it.kind == LocalLibraryItem.Kind.FILE_ENTRY }
-    }
-
-    internal suspend fun documentPageCount(chapterUrl: String): Int? = withIOContext {
-        val file = localChapterFile(chapterUrl) ?: return@withIOContext null
-        runCatching {
-            when {
-                DocumentEngines.forExtension(file.extension) != null -> {
-                    DocumentEngines.open(context, file, documentLayoutPreferences.toDocumentRenderSettings())
-                        .use { session -> session.pageCount }
-                }
-                LocalMediaFormats.isImage(file.extension) -> 1
-                LocalMediaFormats.isArchive(file.extension) -> {
-                    val coroutineContext = currentCoroutineContext()
-                    file.archiveReader(context) { coroutineContext.ensureActive() }.use { reader ->
-                        reader.imageEntries { coroutineContext.ensureActive() }.size
-                    }
-                }
-                file.extension.equals("pdf", ignoreCase = true) -> {
-                    context.contentResolver.openFileDescriptor(file.uri, "r")?.use { descriptor ->
-                        PdfRenderer(descriptor).use { renderer -> renderer.pageCount }
-                    } ?: 0
-                }
-                else -> 0
-            }
-        }.onFailure { if (it is CancellationException) throw it }.getOrNull()?.takeIf { it > 0 }
     }
 
     private fun documentPageMemo(

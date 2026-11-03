@@ -37,7 +37,7 @@ internal object BackupDirectoryRemapper {
             ).toString()
         }
         source.copy(
-            prefs = source.prefs.filterNot { it.key == "local_folder_operation" }.map { preference ->
+            prefs = source.prefs.map { preference ->
                 if (preference.key == "local_library_index" && preference.value is StringPreferenceValue) {
                     val index = runCatching {
                         json.decodeFromString<LocalLibraryIndex>(preference.value.value)

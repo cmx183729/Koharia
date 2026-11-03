@@ -174,7 +174,6 @@ class LocalLibraryLoadingTest {
             val progress = fixture.model.readProgressByUrl.first { finished.url in it }
             assertEquals(setOf(finished.url), progress.keys)
             assertEquals(100L, progress.getValue(finished.url).readCount)
-            coVerify(exactly = 0) { fixture.source.documentPageCount(any()) }
             coVerify(exactly = 0) { fixture.source.refreshLibrary() }
         } finally {
             dispose(fixture)
@@ -190,7 +189,6 @@ class LocalLibraryLoadingTest {
         try {
             val counts = fixture.model.readingUnitCounts.first { manga.url in it }
             assertEquals(1L, counts.getValue(manga.url))
-            coVerify(exactly = 0) { fixture.source.documentPageCount(any()) }
             coVerify(exactly = 0) { fixture.source.refreshLibrary() }
         } finally {
             dispose(fixture)
@@ -357,7 +355,6 @@ class LocalLibraryLoadingTest {
             firstArg<Collection<String>>().associateWith { LocalReadProgressIndex(1, true) }
         }
         every { source.indexedEntry(any()) } returns null
-        coEvery { source.documentPageCount(any()) } returns 20
         every { sourceManager.getOrStub(42) } returns source
         every { sourcePreferences.sourceDisplayMode } returns
             preference<LibraryDisplayMode>(LibraryDisplayMode.CompactGrid)
