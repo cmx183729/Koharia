@@ -44,9 +44,9 @@ class ConnectionLibraryHiddenScreen : Screen() {
         val hiddenIds by remember(connectionPreferences) { connectionPreferences.hiddenLibraryIdsChanges() }
             .collectAsState(initial = connectionPreferences.hiddenLibraryIds())
 
-        fun setVisible(id: Long, visible: Boolean) {
+        fun setHidden(id: Long, hidden: Boolean) {
             val ids = connectionPreferences.hiddenLibraryIds().toMutableSet()
-            if (visible) ids -= id else ids += id
+            if (hidden) ids += id else ids -= id
             connectionPreferences.setHiddenLibraryIds(ids)
         }
 
@@ -80,17 +80,19 @@ class ConnectionLibraryHiddenScreen : Screen() {
                     items = profiles,
                     key = { it.id },
                 ) { profile ->
-                    val visible = profile.id !in hiddenIds
+                    // A tick means "hide this library": the list is titled after the hidden set, so
+                    // the box has to follow the same polarity as the copy above it.
+                    val hidden = profile.id in hiddenIds
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { setVisible(profile.id, !visible) }
+                            .clickable { setHidden(profile.id, !hidden) }
                             .padding(horizontal = 16.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Checkbox(
-                            checked = visible,
-                            onCheckedChange = { setVisible(profile.id, it) },
+                            checked = hidden,
+                            onCheckedChange = { setHidden(profile.id, it) },
                         )
                         Text(
                             text = profile.name,

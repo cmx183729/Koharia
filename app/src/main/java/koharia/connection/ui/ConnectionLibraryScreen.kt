@@ -17,6 +17,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -51,7 +52,7 @@ import tachiyomi.presentation.core.util.collectAsState
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
-/** Aggregate library host. It only reads persisted local membership and never refreshes a provider. */
+/** Aggregate library host. Rows come from the persisted catalogue, which server connections fill on refresh. */
 class ConnectionLibraryScreen(
     val allowedLibraryKinds: Set<ConnectionLibraryKind>? = null,
     private val titleRes: StringResource = MR.strings.label_library,
@@ -194,13 +195,16 @@ internal fun ConnectionLibraryBody(
                 }
         }
     }
-    LaunchedEffect(downloads, onDownloadState, state.entries) {
+    // Keying the collector on the entry list would tear down and re-subscribe it on every search
+    // keystroke submit, so it reads the current list through rememberUpdatedState instead.
+    val latestEntries by rememberUpdatedState(state.entries)
+    LaunchedEffect(downloads, onDownloadState) {
         downloads.cacheUpdates.collect { change ->
             if (change.sourceId == null && change.mangaDirectories == null) {
                 downloadCounts.value = emptyMap()
                 model.invalidateDownloadCounts()
             } else {
-                val affected = state.entries.filter { entry ->
+                val affected = latestEntries.filter { entry ->
                     downloads.isAffectedByCacheUpdate(entry.manga, change)
                 }
                 affected.forEach { entry ->

@@ -9,8 +9,11 @@ import eu.kanade.tachiyomi.data.download.DownloadManager
 import koharia.connection.ConnectionLibraryEntry
 import koharia.connection.ConnectionLibraryEntryKey
 import koharia.connection.ConnectionLibraryKind
+import koharia.connection.ConnectionLibrarySeedReport
 import koharia.connection.ConnectionSource
+import koharia.connection.connectionLibrarySeedSourceIds
 import koharia.connection.getAggregatedConnectionLibraryEntries
+import koharia.connection.seedConnectionLibrary
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,6 +25,8 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import logcat.LogPriority
+import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.library.model.LibraryDisplayMode
@@ -30,6 +35,7 @@ import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.util.concurrent.ConcurrentHashMap
 
 class ConnectionLibraryScreenModel(
     private val mangaRepository: MangaRepository = Injekt.get(),
@@ -52,19 +58,55 @@ class ConnectionLibraryScreenModel(
                 .groupBy { it.mangaId }
         }
     },
+    // The shelf composes the neighbouring pages ahead of a swipe. Loading them eagerly would read
+    // the whole library two or three times before the user ever looks at them, so a neighbour is
+    // created idle and loaded through ensureLoaded() once it becomes the visible page.
+    private val autoRefresh: Boolean = true,
 ) : StateScreenModel<ConnectionLibraryScreenModel.State>(State()) {
 
-    private var allEntries: List<ConnectionLibraryEntry> = emptyList()
-    private var chaptersByMangaId: Map<Long, List<Chapter>> = emptyMap()
+    // refresh() fills these from Dispatchers.IO while the UI thread reads them back through
+    // applyQuery, ownerOptions and chapterProgress. Without @Volatile a reader can keep seeing the
+    // empty list it saw first, which looks like a library that refuses to load.
+    @Volatile private var allEntries: List<ConnectionLibraryEntry> = emptyList()
+
+    @Volatile private var chaptersByMangaId: Map<Long, List<Chapter>> = emptyMap()
     val chapterProgress: Map<Long, List<Chapter>> get() = chaptersByMangaId
-    private var genreQuery = false
-    private var manualDownloadCounts: MutableMap<ConnectionLibraryEntryKey, Int> = mutableMapOf()
+
+    @Volatile private var genreQuery = false
+
+    // Written by the IO refresh and by the download-cache callbacks on the main thread.
+    private val manualDownloadCounts = ConcurrentHashMap<ConnectionLibraryEntryKey, Int>()
+
     private var refreshJob: Job? = null
     private var refreshGeneration = 0L
+    private var loaded = false
+
+    // One flow per entry, kept across emissions: handing out a new StateFlow every time the state
+    // changes would re-subscribe every visible tile and restart its composition on each filter or
+    // download-count update.
+    private val mangaFlows = ConcurrentHashMap<ConnectionLibraryEntryKey, MutableStateFlow<Manga>>()
 
     val pages: Flow<PagingData<StateFlow<Manga>>> = state.map { value ->
-        PagingData.from(value.entries.map { MutableStateFlow(it.manga) as StateFlow<Manga> })
+        val keys = HashSet<ConnectionLibraryEntryKey>(value.entries.size * 2)
+        val rows = value.entries.map { entry ->
+            keys += entry.key
+            mangaFlow(entry)
+        }
+        if (mangaFlows.size > keys.size + PRUNED_ROW_SLACK) {
+            mangaFlows.keys.retainAll(keys)
+        }
+        PagingData.from(rows)
     }.flowOn(Dispatchers.Default).cachedIn(screenModelScope)
+
+    private fun mangaFlow(entry: ConnectionLibraryEntry): StateFlow<Manga> {
+        val flow = mangaFlows.getOrPut(entry.key) { MutableStateFlow(entry.manga) }
+        // StateFlow drops a write that is equal to the current value, so an unchanged row costs
+        // nothing beyond the comparison.
+        if (flow.value != entry.manga) {
+            flow.value = entry.manga
+        }
+        return flow
+    }
 
     init {
         screenModelScope.launch {
@@ -72,6 +114,12 @@ class ConnectionLibraryScreenModel(
                 mutableState.update { it.copy(displayMode = mode) }
             }
         }
+        if (autoRefresh) refresh()
+    }
+
+    /** Loads the entries once, for pages the shelf created while they were still off screen. */
+    fun ensureLoaded() {
+        if (loaded) return
         refresh()
     }
 
@@ -122,18 +170,18 @@ class ConnectionLibraryScreenModel(
         refreshJob = screenModelScope.launch(Dispatchers.IO) {
             mutableState.update { it.copy(isLoading = true, error = null) }
             try {
-                val entries = filterConnectionLibraryEntriesByKind(
-                    mangaRepository.getAggregatedConnectionLibraryEntries(sourceManager, allowedConnectionIds),
-                    allowedLibraryKinds,
-                )
+                // On the first load show what is already cached before touching the network, so a
+                // server connection never turns a populated tab into a spinner. Later refreshes
+                // keep the rows already on screen for the same reason.
+                if (!loaded) {
+                    val cached = loadEntries()
+                    if (generation != refreshGeneration) return@launch
+                    if (cached.isNotEmpty()) publish(generation, cached)
+                }
+
+                seedLibrary()
                 if (generation != refreshGeneration) return@launch
-                val chapterProgress = loadChapterProgress(entries)
-                if (generation != refreshGeneration) return@launch
-                allEntries = entries
-                chaptersByMangaId = chapterProgress
-                mutableState.update { it.copy(isLoading = false) }
-                manualDownloadCounts.clear()
-                applyQuery(mutableState.value.query, genreQuery)
+                publish(generation, loadEntries())
             } catch (error: CancellationException) {
                 // A cancelled refresh must not leave the screen pinned on the loading state:
                 // re-selecting the tab cancels and restarts this job, and nothing else clears it.
@@ -147,6 +195,45 @@ class ConnectionLibraryScreenModel(
                 }
             }
         }
+    }
+
+    private suspend fun loadEntries(): List<ConnectionLibraryEntry> = filterConnectionLibraryEntriesByKind(
+        mangaRepository.getAggregatedConnectionLibraryEntries(sourceManager, allowedConnectionIds),
+        allowedLibraryKinds,
+    )
+
+    private suspend fun publish(generation: Long, entries: List<ConnectionLibraryEntry>) {
+        val chapterProgress = loadChapterProgress(entries)
+        if (generation != refreshGeneration) return
+        allEntries = entries
+        chaptersByMangaId = chapterProgress
+        loaded = true
+        mutableState.update { it.copy(isLoading = false) }
+        manualDownloadCounts.clear()
+        applyQuery(mutableState.value.query, genreQuery)
+    }
+
+    /**
+     * The aggregate library reads local rows only, and a server connection writes those rows when a
+     * series is opened. A connection added today therefore had an empty library until something
+     * else cached a series, and pulling to refresh could not change that. Fill the catalogue here
+     * instead; local and network-share connections keep using their own scan.
+     */
+    private suspend fun seedLibrary(): ConnectionLibrarySeedReport = try {
+        seedConnectionLibrary(
+            sourceManager = sourceManager,
+            mangaRepository = mangaRepository,
+            sourceIds = sourceManager.connectionLibrarySeedSourceIds(
+                allowedSourceIds = allowedConnectionIds,
+                allowedLibraryKinds = allowedLibraryKinds,
+            ),
+        )
+    } catch (error: Throwable) {
+        // Filling the catalogue is best effort: a server that is down, a provider that cannot
+        // list, or a repository that refuses must never fail the library refresh itself.
+        if (error is CancellationException) throw error
+        logcat(LogPriority.WARN, error) { "Unable to seed the connection library" }
+        ConnectionLibrarySeedReport()
     }
 
     fun search(query: String) {
@@ -163,6 +250,9 @@ class ConnectionLibraryScreenModel(
 
     private fun applyQuery(query: String, genre: Boolean) {
         val filters = mutableState.value.filters
+        // Read the backing list once: a refresh running on IO can replace it between two reads,
+        // which would filter one snapshot and sort another.
+        val entries = allEntries
         val labels = mutableMapOf<Long, String>()
         val resolveOwnerLabel: (Long) -> String = { sourceId ->
             labels.getOrPut(sourceId) { ownerLabel(sourceId) }
@@ -170,7 +260,7 @@ class ConnectionLibraryScreenModel(
         mutableState.update {
             it.copy(
                 entries = transformConnectionLibraryEntries(
-                    entries = allEntries,
+                    entries = entries,
                     query = query,
                     genreQuery = genre,
                     filters = filters,
@@ -199,4 +289,13 @@ class ConnectionLibraryScreenModel(
         val isLoading: Boolean = true,
         val error: Throwable? = null,
     )
+
+    private companion object {
+        /**
+         * Rows kept in the flow cache beyond the current entry count. Refiltering a large library
+         * re-visits most keys, so pruning on every emission would defeat the cache; only a real
+         * shrink (a filter narrowing 20k rows to 200) clears it.
+         */
+        const val PRUNED_ROW_SLACK = 512
+    }
 }

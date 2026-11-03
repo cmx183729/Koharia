@@ -127,9 +127,13 @@ object SettingsLibraryScreen : SearchableSettings {
     private fun getShelfGroup(
         connectionPreferences: ConnectionPreferences,
         profiles: List<koharia.connection.LibraryConnectionProfile>,
-    ): Preference.PreferenceGroup {
+    ): Preference.PreferenceGroup? {
+        // Without a library the bar has nothing to show, so the switch would be a setting that
+        // does nothing: same rule the organization group follows.
+        if (profiles.isEmpty()) return null
         val hiddenIds by remember(connectionPreferences) { connectionPreferences.hiddenLibraryIdsChanges() }
             .collectAsState(initial = connectionPreferences.hiddenLibraryIds())
+        val shelfEnabled by connectionPreferences.shelfTabsEnabled.collectAsState()
         val navigator = cafe.adriel.voyager.navigator.LocalNavigator.current
         val hiddenSummary = if (hiddenIds.isEmpty()) {
             stringResource(MR.strings.connection_library_hidden_libraries_summary)
@@ -147,7 +151,9 @@ object SettingsLibraryScreen : SearchableSettings {
                 Preference.PreferenceItem.TextPreference(
                     title = stringResource(MR.strings.connection_library_hidden_libraries),
                     subtitle = hiddenSummary,
-                    enabled = profiles.isNotEmpty(),
+                    // Hiding only matters for the shelf bar: with the bar off this list would
+                    // silently do nothing.
+                    enabled = shelfEnabled,
                     onClick = { navigator?.push(ConnectionLibraryHiddenScreen()) },
                 ),
             ),

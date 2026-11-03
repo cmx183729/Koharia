@@ -152,12 +152,27 @@ internal fun Screen.ConnectionLibraryShelf(
     }
 
     val pagerState = rememberPagerState(pageCount = { tabs.size })
-    LaunchedEffect(tabs.size) {
-        if (pagerState.currentPage > tabs.lastIndex) {
-            pagerState.scrollToPage(tabs.lastIndex)
+    // Hiding a library must not slide the user onto whichever page took over its index: remember
+    // the selected entry by key and move the pager to wherever that key lives now.
+    var selectedKey by remember { mutableStateOf(tabs.first().key) }
+    LaunchedEffect(tabs) {
+        val target = tabs.indexOfFirst { it.key == selectedKey }
+        if (target >= 0) {
+            if (target != pagerState.currentPage) {
+                pagerState.scrollToPage(target)
+            }
+        } else {
+            val clamped = pagerState.currentPage.coerceIn(0, tabs.lastIndex)
+            if (clamped != pagerState.currentPage) {
+                pagerState.scrollToPage(clamped)
+            }
+            selectedKey = tabs[clamped].key
         }
     }
     val currentIndex = pagerState.currentPage.coerceIn(0, tabs.lastIndex)
+    LaunchedEffect(currentIndex) {
+        tabs.getOrNull(currentIndex)?.let { selectedKey = it.key }
+    }
     val currentTab = tabs[currentIndex]
     val currentModel = rememberScreenModel(tag = "shelf:${currentTab.key}") {
         ConnectionLibraryScreenModel(allowedConnectionIds = currentTab.libraryIds)
@@ -170,16 +185,32 @@ internal fun Screen.ConnectionLibraryShelf(
     var showFilters by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val eInkEnabled = LocalEInkDisplayPolicy.current.enabled
-    val refreshFailedMessage = stringResource(MR.strings.connection_library_refresh_failed)
-    LaunchedEffect(state.error, state.entries.isNotEmpty()) {
-        if (state.error != null && state.entries.isNotEmpty()) {
-            snackbar.showSnackbar(refreshFailedMessage)
-        }
-    }
     // The search field belongs to the shelf, the filter itself belongs to the page. Leaving a page
     // with a filter it no longer shows would hide rows behind an empty search box.
     LaunchedEffect(currentIndex) {
         searchQuery = null
+    }
+
+    // A single page has nothing to switch to, and the title already names it.
+    val titleSlot: (@Composable () -> Unit)? = if (tabs.size > 1) {
+        {
+            LibraryShelfTabStrip(
+                tabs = tabs,
+                selectedIndex = currentIndex,
+                onSelect = { index ->
+                    scope.launch {
+                        if (eInkEnabled) {
+                            pagerState.scrollToPage(index)
+                        } else {
+                            pagerState.animateScrollToPage(index)
+                        }
+                    }
+                    searchQuery = null
+                },
+            )
+        }
+    } else {
+        null
     }
 
     ConnectionLibraryFilterSheet(model = currentModel, visible = showFilters, onDismiss = { showFilters = false })
@@ -207,22 +238,7 @@ internal fun Screen.ConnectionLibraryShelf(
                 hasActiveFilters = state.filters.isActive,
                 showConnectionAction = false,
                 title = currentTab.title.ifEmpty { stringResource(titleRes) },
-                titleSlot = {
-                    LibraryShelfTabStrip(
-                        tabs = tabs,
-                        selectedIndex = currentIndex,
-                        onSelect = { index ->
-                            scope.launch {
-                                if (eInkEnabled) {
-                                    pagerState.scrollToPage(index)
-                                } else {
-                                    pagerState.animateScrollToPage(index)
-                                }
-                            }
-                            searchQuery = null
-                        },
-                    )
-                },
+                titleSlot = titleSlot,
                 scrollBehavior = scrollBehavior,
             )
         },
@@ -239,11 +255,18 @@ internal fun Screen.ConnectionLibraryShelf(
             // splitting the library into pages.
             if (page !in (currentIndex - 1)..(currentIndex + 1)) return@HorizontalPager
             val tab = tabs.getOrNull(page) ?: return@HorizontalPager
-            val pageModel = rememberScreenModel(tag = "shelf:${tab.key}") {
-                ConnectionLibraryScreenModel(allowedConnectionIds = tab.libraryIds)
-            }
             val isCurrent = page == currentIndex
-            if (!isCurrent) {
+            // A neighbour stays idle until it is swiped onto: reading its entries here would pay
+            // for the next page before the user asked for it.
+            val pageModel = rememberScreenModel(tag = "shelf:${tab.key}") {
+                ConnectionLibraryScreenModel(
+                    allowedConnectionIds = tab.libraryIds,
+                    autoRefresh = isCurrent,
+                )
+            }
+            if (isCurrent) {
+                LaunchedEffect(page) { pageModel.ensureLoaded() }
+            } else {
                 LaunchedEffect(page) { pageModel.search("") }
             }
             ConnectionLibraryBody(
