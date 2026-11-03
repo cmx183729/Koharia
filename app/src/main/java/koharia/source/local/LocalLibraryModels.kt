@@ -536,7 +536,8 @@ class LocalLibraryPreferences(
         val reboundIds = previousRoots.filter { old ->
             config.roots.any { it.id == old.id && it.directoryKey() != old.directoryKey() }
         }.mapTo(mutableSetOf(), LocalLibraryRootConfig::id)
-        val removedKeys = getIndex().items.filter { item -> removedRoots.any { it.id == item.rootId } }
+        val removedRootIds = removedRoots.mapTo(mutableSetOf(), LocalLibraryRootConfig::id)
+        val removedKeys = getIndex().items.filter { item -> item.rootId in removedRootIds }
             .mapTo(mutableSetOf(), LocalLibraryItem::itemKey)
         removedRoots.forEach { removeRoot(it.id) }
         if (reboundIds.isNotEmpty()) {
@@ -616,8 +617,9 @@ class LocalLibraryPreferences(
                 managedBaseDisplayPath = config.managedBaseDisplayPath.takeIf { keepManagedBase }.orEmpty(),
             ),
         )
-        val removedKeys = getIndex().items.filter { it.rootId == rootId }.mapTo(mutableSetOf()) { it.itemKey }
-        setIndex(getIndex().copy(items = getIndex().items.filterNot { it.rootId == rootId }))
+        val index = getIndex()
+        val removedKeys = index.items.filter { it.rootId == rootId }.mapTo(mutableSetOf()) { it.itemKey }
+        setIndex(index.copy(items = index.items.filterNot { it.rootId == rootId }))
         metadataStore.removeItems(removedKeys)
     }
 

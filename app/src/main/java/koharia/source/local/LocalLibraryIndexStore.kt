@@ -5,10 +5,10 @@ import koharia.domain.local.LocalLibraryIndexRepository
 import koharia.domain.local.LocalLibraryIndexSnapshot
 import koharia.domain.local.LocalLibraryIndexWrite
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.ConcurrentHashMap
 
@@ -67,10 +67,11 @@ internal class LocalLibraryIndexStore(
                         schemaVersion = updated.schemaVersion,
                         titlePurgeRegex = updated.titlePurgeRegex,
                         folderOperation = memo.folderOperation,
+                        metaChanged = false,
                     ),
                 )
             }
-            writes.tryEmit(sourceId)
+            signal(sourceId)
         }
     }
 
@@ -78,7 +79,7 @@ internal class LocalLibraryIndexStore(
         synchronized(writeLock) {
             memos.remove(sourceId)
             runBlocking { repository.clear(sourceId) }
-            writes.tryEmit(sourceId)
+            signal(sourceId)
         }
     }
 
@@ -116,10 +117,11 @@ internal class LocalLibraryIndexStore(
                         schemaVersion = index.schemaVersion,
                         titlePurgeRegex = index.titlePurgeRegex,
                         folderOperation = folderOperation,
+                        metaChanged = metaChanged,
                     ),
                 )
             }
-            writes.tryEmit(sourceId)
+            signal(sourceId)
         }
     }
 
@@ -133,15 +135,25 @@ internal class LocalLibraryIndexStore(
 
     companion object {
         private val memos = ConcurrentHashMap<Long, Memo>()
-        private val writes = MutableSharedFlow<Long>(extraBufferCapacity = 64)
+
+        /**
+         * Per-source invalidation counters. A shared flow drops the event once its buffer fills,
+         * which leaves observers reading stale data; a state flow only conflates, so the newest
+         * version is always visible to whoever collects next.
+         */
+        private val versions = ConcurrentHashMap<Long, MutableStateFlow<Long>>()
 
         /** Serialises the read-diff-write sequence across every store that shares a source. */
         private val writeLock = Any()
 
         /** Emits whenever a stored index for [sourceId] changed, so observers can drop their reads. */
-        fun changes(sourceId: Long): Flow<Unit> = writes.asSharedFlow()
-            .filter { it == sourceId }
+        fun changes(sourceId: Long): Flow<Unit> = versions.getOrPut(sourceId) { MutableStateFlow(0L) }
+            .drop(1)
             .map { }
+
+        private fun signal(sourceId: Long) {
+            versions.getOrPut(sourceId) { MutableStateFlow(0L) }.update { it + 1 }
+        }
     }
 }
 

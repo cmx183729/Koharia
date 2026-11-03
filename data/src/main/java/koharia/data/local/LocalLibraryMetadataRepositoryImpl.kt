@@ -96,16 +96,38 @@ class LocalLibraryMetadataRepositoryImpl(
 
     override suspend fun removeBookshelfAssignments(sourceId: Long, itemKeys: Set<String>) {
         if (itemKeys.isEmpty()) return
-        queries.removeBookshelfAssignments(sourceId, itemKeys)
+        database.transaction {
+            itemKeys.chunked(MAX_IN_VARIABLES).forEach {
+                queries.removeBookshelfAssignments(sourceId, it)
+            }
+        }
+    }
+
+    override suspend fun applyBookshelfAssignments(
+        sourceId: Long,
+        put: Map<String, String>,
+        remove: Set<String>,
+    ) {
+        if (put.isEmpty() && remove.isEmpty()) return
+        database.transaction {
+            remove.chunked(MAX_IN_VARIABLES).forEach {
+                queries.removeBookshelfAssignments(sourceId, it)
+            }
+            put.forEach { (itemKey, bookshelfId) ->
+                queries.putBookshelfAssignment(sourceId, itemKey, bookshelfId)
+            }
+        }
     }
 
     override suspend fun removeItems(sourceId: Long, itemKeys: Set<String>) {
         if (itemKeys.isEmpty()) return
         database.transaction {
-            queries.removeMetadata(sourceId, itemKeys)
-            queries.removeFolderDisplay(sourceId, itemKeys)
-            queries.removeBookshelfAssignments(sourceId, itemKeys)
-            queries.removeMetadataRevisions(sourceId, itemKeys)
+            itemKeys.chunked(MAX_IN_VARIABLES).forEach { chunk ->
+                queries.removeMetadata(sourceId, chunk)
+                queries.removeFolderDisplay(sourceId, chunk)
+                queries.removeBookshelfAssignments(sourceId, chunk)
+                queries.removeMetadataRevisions(sourceId, chunk)
+            }
         }
     }
 
@@ -147,4 +169,13 @@ class LocalLibraryMetadataRepositoryImpl(
 
     private fun decodeSet(value: String?): Set<String> =
         value?.let { runCatching { json.decodeFromString(setSerializer, it) }.getOrNull() }.orEmpty()
+
+    private companion object {
+        /**
+         * SQLite refuses a statement with more variables than `SQLITE_MAX_VARIABLE_NUMBER`, which is
+         * 999 before SQLite 3.32 - the version Android 10 and older still ship. A generated `IN ?`
+         * binds one variable per element, so a delete of a whole root has to be chunked.
+         */
+        const val MAX_IN_VARIABLES = 900
+    }
 }

@@ -53,6 +53,17 @@ interface LocalLibraryMetadataRepository {
 
     suspend fun removeBookshelfAssignments(sourceId: Long, itemKeys: Set<String>)
 
+    /**
+     * Puts and deletes assignments in one transaction. A whole-map save that reorders shelves is a
+     * mix of both, and applying the two halves separately can leave an item on two shelves when the
+     * process dies between them.
+     */
+    suspend fun applyBookshelfAssignments(
+        sourceId: Long,
+        put: Map<String, String>,
+        remove: Set<String>,
+    )
+
     /** Drops every row that hangs off the given items, in one transaction. */
     suspend fun removeItems(sourceId: Long, itemKeys: Set<String>)
 

@@ -46,6 +46,8 @@ data class LocalLibraryIndexWrite(
     val schemaVersion: Int,
     val titlePurgeRegex: String,
     val folderOperation: String?,
+    /** False when only item or pending-refresh rows changed, so the meta row is left alone. */
+    val metaChanged: Boolean = true,
 )
 
 interface LocalLibraryIndexRepository {

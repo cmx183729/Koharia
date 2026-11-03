@@ -5,10 +5,10 @@ import koharia.domain.local.LocalLibraryMetadataRecord
 import koharia.domain.local.LocalLibraryMetadataRepository
 import koharia.domain.local.LocalLibraryMetadataSnapshot
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.ConcurrentHashMap
 
@@ -25,106 +25,117 @@ internal class LocalLibraryMetadataStore(
 ) {
     fun overrides(): Map<String, LocalMetadataOverride> = memo().overrides
 
-    @Synchronized
     fun putOverride(itemKey: String, value: LocalMetadataOverride) {
-        val current = memo()
-        if (current.overrides[itemKey] == value) return
-        memos[sourceId] = current.copy(overrides = current.overrides + (itemKey to value))
-        runBlocking { repository.putOverride(sourceId, value.toRecord(itemKey)) }
-        signal()
+        // Every instance for this source shares the memoized snapshot, so the read-diff-write has
+        // to be one step or two writers can interleave and drop each other's rows.
+        synchronized(writeLock) {
+            val current = memo()
+            if (current.overrides[itemKey] == value) return
+            memos[sourceId] = current.copy(overrides = current.overrides + (itemKey to value))
+            runBlocking { repository.putOverride(sourceId, value.toRecord(itemKey)) }
+            signal()
+        }
     }
 
     fun folderDisplay(key: String): LocalFolderDisplaySettings =
         memo().folderDisplay[key] ?: LocalFolderDisplaySettings()
 
-    @Synchronized
     fun setFolderDisplay(key: String, value: LocalFolderDisplaySettings) {
-        val current = memo()
-        if (current.folderDisplay[key] == value) return
-        memos[sourceId] = current.copy(folderDisplay = current.folderDisplay + (key to value))
-        runBlocking { repository.putFolderDisplay(sourceId, value.toRecord(key)) }
-        signal()
+        synchronized(writeLock) {
+            val current = memo()
+            if (current.folderDisplay[key] == value) return
+            memos[sourceId] = current.copy(folderDisplay = current.folderDisplay + (key to value))
+            runBlocking { repository.putFolderDisplay(sourceId, value.toRecord(key)) }
+            signal()
+        }
     }
 
     fun bookshelfAssignments(): Map<String, String> = memo().assignments
 
-    @Synchronized
     fun setBookshelfAssignment(itemKey: String, bookshelfId: String) {
-        val current = memo()
-        if (current.assignments[itemKey] == bookshelfId) return
-        memos[sourceId] = current.copy(assignments = current.assignments + (itemKey to bookshelfId))
-        runBlocking { repository.putBookshelfAssignments(sourceId, mapOf(itemKey to bookshelfId)) }
-        signal()
+        synchronized(writeLock) {
+            val current = memo()
+            if (current.assignments[itemKey] == bookshelfId) return
+            memos[sourceId] = current.copy(assignments = current.assignments + (itemKey to bookshelfId))
+            runBlocking { repository.putBookshelfAssignments(sourceId, mapOf(itemKey to bookshelfId)) }
+            signal()
+        }
     }
 
-    @Synchronized
     fun clearBookshelfAssignment(itemKey: String) {
-        val current = memo()
-        if (itemKey !in current.assignments) return
-        memos[sourceId] = current.copy(assignments = current.assignments - itemKey)
-        runBlocking { repository.removeBookshelfAssignments(sourceId, setOf(itemKey)) }
-        signal()
+        synchronized(writeLock) {
+            val current = memo()
+            if (itemKey !in current.assignments) return
+            memos[sourceId] = current.copy(assignments = current.assignments - itemKey)
+            runBlocking { repository.removeBookshelfAssignments(sourceId, setOf(itemKey)) }
+            signal()
+        }
     }
 
     /**
      * Whole-map writes still arrive from the settings screen, but only the rows that differ are
-     * written, so saving a draft no longer rewrites every assignment of the library.
+     * written, and both halves land in one transaction so a reorder cannot leave an item on two
+     * shelves after a crash.
      */
-    @Synchronized
     fun replaceBookshelfAssignments(assignments: Map<String, String>) {
-        val current = memo()
-        if (current.assignments == assignments) return
-        val changed = assignments.filter { (key, value) -> current.assignments[key] != value }
-        val removed = current.assignments.keys - assignments.keys
-        memos[sourceId] = current.copy(assignments = assignments)
-        runBlocking {
-            repository.putBookshelfAssignments(sourceId, changed)
-            repository.removeBookshelfAssignments(sourceId, removed)
+        synchronized(writeLock) {
+            val current = memo()
+            if (current.assignments == assignments) return
+            val changed = assignments.filter { (key, value) -> current.assignments[key] != value }
+            val removed = current.assignments.keys - assignments.keys
+            memos[sourceId] = current.copy(assignments = assignments)
+            runBlocking {
+                repository.applyBookshelfAssignments(sourceId, changed, removed)
+            }
+            signal()
         }
-        signal()
     }
 
     fun customCoverUrls(): Set<String> = memo().covers
 
-    @Synchronized
     fun rememberCustomCover(url: String) {
-        val current = memo()
-        if (url in current.covers) return
-        memos[sourceId] = current.copy(covers = current.covers + url)
-        runBlocking { repository.putCustomCover(sourceId, url) }
-        signal()
+        synchronized(writeLock) {
+            val current = memo()
+            if (url in current.covers) return
+            memos[sourceId] = current.copy(covers = current.covers + url)
+            runBlocking { repository.putCustomCover(sourceId, url) }
+            signal()
+        }
     }
 
     fun metadataRevision(key: String): String? = memo().revisions[key]
 
-    @Synchronized
     fun setMetadataRevision(key: String, revision: String) {
-        val current = memo()
-        if (current.revisions[key] == revision) return
-        memos[sourceId] = current.copy(revisions = current.revisions + (key to revision))
-        runBlocking { repository.putMetadataRevision(sourceId, key, revision) }
-        signal()
+        synchronized(writeLock) {
+            val current = memo()
+            if (current.revisions[key] == revision) return
+            memos[sourceId] = current.copy(revisions = current.revisions + (key to revision))
+            runBlocking { repository.putMetadataRevision(sourceId, key, revision) }
+            signal()
+        }
     }
 
-    @Synchronized
     fun removeItems(keys: Set<String>) {
         if (keys.isEmpty()) return
-        val current = memo()
-        memos[sourceId] = current.copy(
-            overrides = current.overrides - keys,
-            folderDisplay = current.folderDisplay - keys,
-            assignments = current.assignments - keys,
-            revisions = current.revisions - keys,
-        )
-        runBlocking { repository.removeItems(sourceId, keys) }
-        signal()
+        synchronized(writeLock) {
+            val current = memo()
+            memos[sourceId] = current.copy(
+                overrides = current.overrides - keys,
+                folderDisplay = current.folderDisplay - keys,
+                assignments = current.assignments - keys,
+                revisions = current.revisions - keys,
+            )
+            runBlocking { repository.removeItems(sourceId, keys) }
+            signal()
+        }
     }
 
-    @Synchronized
     fun clear() {
-        memos.remove(sourceId)
-        runBlocking { repository.clear(sourceId) }
-        signal()
+        synchronized(writeLock) {
+            memos.remove(sourceId)
+            runBlocking { repository.clear(sourceId) }
+            signal()
+        }
     }
 
     private fun memo(): Memo = memos[sourceId] ?: runBlocking { repository.load(sourceId) }.toMemo().also {
@@ -132,7 +143,7 @@ internal class LocalLibraryMetadataStore(
     }
 
     private fun signal() {
-        writes.tryEmit(sourceId)
+        versions.getOrPut(sourceId) { MutableStateFlow(0L) }.update { it + 1 }
     }
 
     private data class Memo(
@@ -153,10 +164,19 @@ internal class LocalLibraryMetadataStore(
 
     companion object {
         private val memos = ConcurrentHashMap<Long, Memo>()
-        private val writes = MutableSharedFlow<Long>(extraBufferCapacity = 64)
 
-        fun changes(sourceId: Long): Flow<Unit> = writes.asSharedFlow()
-            .filter { it == sourceId }
+        /**
+         * Per-source invalidation counters. A shared flow drops the event once its buffer fills,
+         * which leaves observers reading stale data; a state flow only conflates, so the newest
+         * version is always visible to whoever collects next.
+         */
+        private val versions = ConcurrentHashMap<Long, MutableStateFlow<Long>>()
+
+        /** Serialises the read-diff-write sequence across every store that shares a source. */
+        private val writeLock = Any()
+
+        fun changes(sourceId: Long): Flow<Unit> = versions.getOrPut(sourceId) { MutableStateFlow(0L) }
+            .drop(1)
             .map { }
     }
 }

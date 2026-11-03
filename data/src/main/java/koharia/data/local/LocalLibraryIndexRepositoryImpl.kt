@@ -27,21 +27,23 @@ class LocalLibraryIndexRepositoryImpl(private val database: Database) : LocalLib
 
     override suspend fun apply(sourceId: Long, write: LocalLibraryIndexWrite) {
         database.transaction {
-            if (write.removedItemKeys.isNotEmpty()) {
-                queries.removeItems(sourceId, write.removedItemKeys.toList())
+            write.removedItemKeys.chunked(MAX_IN_VARIABLES).forEach {
+                queries.removeItems(sourceId, it)
             }
             write.items.forEach { put(sourceId, it) }
             write.pendingRefreshItemKeys.forEach { queries.putPendingRefresh(sourceId, it) }
-            if (write.removedPendingRefreshItemKeys.isNotEmpty()) {
-                queries.removePendingRefresh(sourceId, write.removedPendingRefreshItemKeys.toList())
+            write.removedPendingRefreshItemKeys.chunked(MAX_IN_VARIABLES).forEach {
+                queries.removePendingRefresh(sourceId, it)
             }
-            queries.putMeta(
-                sourceId = sourceId,
-                scannedAt = write.scannedAt,
-                schemaVersion = write.schemaVersion.toLong(),
-                titlePurgeRegex = write.titlePurgeRegex,
-                folderOperation = write.folderOperation,
-            )
+            if (write.metaChanged) {
+                queries.putMeta(
+                    sourceId = sourceId,
+                    scannedAt = write.scannedAt,
+                    schemaVersion = write.schemaVersion.toLong(),
+                    titlePurgeRegex = write.titlePurgeRegex,
+                    folderOperation = write.folderOperation,
+                )
+            }
         }
     }
 
@@ -100,5 +102,12 @@ class LocalLibraryIndexRepositoryImpl(private val database: Database) : LocalLib
 
     companion object {
         private const val DEFAULT_SCHEMA_VERSION = 6L
+
+        /**
+         * SQLite refuses a statement with more variables than `SQLITE_MAX_VARIABLE_NUMBER`, which is
+         * 999 before SQLite 3.32 - the version Android 10 and older still ship. A generated `IN ?`
+         * binds one variable per element, so dropping a whole root has to be chunked.
+         */
+        private const val MAX_IN_VARIABLES = 900
     }
 }
