@@ -29,6 +29,7 @@ import tachiyomi.domain.storage.service.StoragePreferences
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.util.concurrent.ConcurrentHashMap
 
 class CustomCoverStore(
     private val context: Context,
@@ -44,10 +45,19 @@ class CustomCoverStore(
     private val _changes = MutableStateFlow(0L)
     val changes = _changes.asStateFlow()
 
+    /**
+     * Identities confirmed absent for the current [changes] generation. Coil re-runs the fetcher on
+     * every memory cache miss, and each probe costs two document provider lookups.
+     */
+    private val absent = ConcurrentHashMap<String, Long>()
+
     // Read by synchronous Coil keyers; never queries a document provider.
     val cacheKey: String get() = "${storagePreferences.baseStorageDirectory.get()};${changes.value}"
 
-    fun invalidate() = _changes.update { it + 1 }
+    fun invalidate() {
+        absent.clear()
+        _changes.update { it + 1 }
+    }
 
     fun initialize(scope: CoroutineScope) {
         scope.launch {
@@ -72,12 +82,18 @@ class CustomCoverStore(
     }
 
     suspend fun open(manga: Manga): InputStream? = withContext(Dispatchers.IO) {
-        mutex.withLock {
+        val identity = key(manga)
+        if (absent[identity] == changes.value) return@withContext null
+        var probed = false
+        val opened = mutex.withLock {
             try {
-                val files = storageManager.getCustomCoversDirectory()?.let(::files)
-                files?.find(key(manga))?.let {
-                    (sourceManager.get(manga.source) as? LocalFolderSource)?.rememberCustomCover(manga.url)
-                    return@withLock it.openInputStream()
+                val directory = storageManager.getCustomCoversDirectory()
+                if (directory != null) {
+                    probed = true
+                    files(directory).find(identity)?.let {
+                        (sourceManager.get(manga.source) as? LocalFolderSource)?.rememberCustomCover(manga.url)
+                        return@withLock it.openInputStream()
+                    }
                 }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
@@ -86,6 +102,9 @@ class CustomCoverStore(
             // Only pre-upgrade originals can exist here. New images are never written privately.
             legacyFiles(manga).firstOrNull { it.isFile }?.inputStream()
         }
+        // Only an answer from a reachable directory says anything durable about this cover.
+        if (opened == null && probed) rememberAbsent(identity)
+        opened
     }
 
     suspend fun exists(manga: Manga): Boolean = open(manga)?.use { true } ?: false
@@ -96,6 +115,8 @@ class CustomCoverStore(
             val directory = storageManager.getCustomCoversDirectory(create = true)
                 ?: throw IOException("Select a writable storage folder for custom covers")
             files(directory).write(key(manga), input)
+            // The store now has an image for this identity; the next probe must look again.
+            absent.clear()
             runCatching { deleteLegacy(manga) }
                 .onFailure { logcat(LogPriority.WARN) { "Legacy custom cover cleanup deferred" } }
         }
@@ -187,5 +208,14 @@ class CustomCoverStore(
         legacyFiles(manga).forEach {
             if (it.exists() && !it.delete()) throw IOException("Cannot remove legacy custom cover")
         }
+    }
+
+    private fun rememberAbsent(identity: String) {
+        if (absent.size >= ABSENT_ENTRIES) absent.clear()
+        absent[identity] = changes.value
+    }
+
+    private companion object {
+        const val ABSENT_ENTRIES = 4096
     }
 }

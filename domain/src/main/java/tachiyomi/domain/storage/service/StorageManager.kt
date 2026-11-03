@@ -33,6 +33,11 @@ class StorageManager(
     @Volatile
     private var cachedDownloadsDirectory: CachedDownloadsDirectory? = null
 
+    private val customCoversDirectoryLock = Any()
+
+    @Volatile
+    private var cachedCustomCoversDirectory: CachedCustomCoversDirectory? = null
+
     private val _changes: Channel<Unit> = Channel(Channel.UNLIMITED)
     val changes = _changes.receiveAsFlow()
         .shareIn(scope, SharingStarted.Lazily, 1)
@@ -60,6 +65,7 @@ class StorageManager(
             baseDir = getBaseDir(uri)
             baseDirUri = uri
             cachedDownloadsDirectory = null
+            cachedCustomCoversDirectory = null
         }
         baseDir
     }
@@ -92,6 +98,7 @@ class StorageManager(
     fun invalidateDownloadsDirectoryCache() {
         synchronized(downloadsDirectoryLock) {
             cachedDownloadsDirectory = null
+            cachedCustomCoversDirectory = null
         }
     }
 
@@ -100,15 +107,46 @@ class StorageManager(
     }
 
     fun getCustomCoversDirectory(create: Boolean = false): UniFile? {
-        val root = currentBaseDir() ?: return null
-        val directory = root.findFile(CUSTOM_COVERS_PATH)
-            ?: if (create) root.createDirectory(CUSTOM_COVERS_PATH) else null
-        return directory?.takeIf { it.isDirectory }?.also {
-            if (create) DiskUtil.createNoMediaFile(it, context)
+        if (create) return createCustomCoversDirectory()
+        return synchronized(customCoversDirectoryLock) {
+            val root = currentBaseDir()
+            val now = currentTimeMillis()
+            val cached = cachedCustomCoversDirectory
+            if (cached != null && cached.isValid(root, now)) return@synchronized cached.directory
+            val directory = root?.findFile(CUSTOM_COVERS_PATH)?.takeIf { it.isDirectory }
+            cachedCustomCoversDirectory = cacheFor(root, directory, now)
+            directory
         }
     }
 
+    private fun createCustomCoversDirectory(): UniFile? {
+        val root = currentBaseDir() ?: return null
+        val directory = root.findFile(CUSTOM_COVERS_PATH)
+            ?: root.createDirectory(CUSTOM_COVERS_PATH)
+            ?: return null
+        val resolved = directory.takeIf { it.isDirectory } ?: return null
+        DiskUtil.createNoMediaFile(resolved, context)
+        val now = currentTimeMillis()
+        synchronized(customCoversDirectoryLock) {
+            cachedCustomCoversDirectory = cacheFor(root, resolved, now)
+        }
+        return resolved
+    }
+
+    /** Coil asks for the covers directory on every cover load; a document provider lookup is not free. */
+    private fun cacheFor(root: UniFile?, directory: UniFile?, now: Long): CachedCustomCoversDirectory? =
+        if (root != null && root.uri.scheme != "file") CachedCustomCoversDirectory(root, directory, now) else null
+
     private data class CachedDownloadsDirectory(val root: UniFile, val directory: UniFile, val resolvedAt: Long) {
+        fun isValid(currentRoot: UniFile?, now: Long): Boolean =
+            root === currentRoot && now - resolvedAt in 0 until 10_000L
+    }
+
+    private data class CachedCustomCoversDirectory(
+        val root: UniFile,
+        val directory: UniFile?,
+        val resolvedAt: Long,
+    ) {
         fun isValid(currentRoot: UniFile?, now: Long): Boolean =
             root === currentRoot && now - resolvedAt in 0 until 10_000L
     }

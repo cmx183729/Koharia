@@ -53,7 +53,10 @@ fun BrowseSourceList(
             }
         }
 
-        items(count = mangaList.itemCount) { index ->
+        items(
+            count = mangaList.itemCount,
+            key = { index -> mangaList.peek(index)?.value?.id ?: "loading-$index" },
+        ) { index ->
             val row by mangaList[index]?.collectAsState() ?: return@items
             val manga = resolveManga(row)
             BrowseSourceListItem(
