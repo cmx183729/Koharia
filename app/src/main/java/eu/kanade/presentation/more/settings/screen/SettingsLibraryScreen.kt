@@ -112,9 +112,45 @@ object SettingsLibraryScreen : SearchableSettings {
                 (activeSource as? koharia.connection.ConnectionOrganizationAdapter)?.organizationPages.orEmpty(),
             ),
             getEntryOpeningGroup(entrySettings, activeProvider?.displayName.orEmpty()),
+            getShelfGroup(connectionPreferences, profiles),
             if (showSeriesSettings) getChapterSettingsGroup(libraryPreferences) else null,
             getGlobalUpdateGroup(),
             if (showSeriesSettings) getBehaviorGroup(libraryPreferences) else null,
+        )
+    }
+
+    /**
+     * The shelf bar splits the library into one page per library. It is opt-in so the previous
+     * single aggregate list stays one switch away for comparison.
+     */
+    @Composable
+    private fun getShelfGroup(
+        connectionPreferences: ConnectionPreferences,
+        profiles: List<koharia.connection.LibraryConnectionProfile>,
+    ): Preference.PreferenceGroup {
+        val hiddenIds by remember(connectionPreferences) { connectionPreferences.hiddenLibraryIdsChanges() }
+            .collectAsState(initial = connectionPreferences.hiddenLibraryIds())
+        val navigator = cafe.adriel.voyager.navigator.LocalNavigator.current
+        val hiddenSummary = if (hiddenIds.isEmpty()) {
+            stringResource(MR.strings.connection_library_hidden_libraries_summary)
+        } else {
+            stringResource(MR.strings.connection_library_hidden_libraries_count, hiddenIds.size)
+        }
+        return Preference.PreferenceGroup(
+            title = stringResource(MR.strings.connection_library_shelf_tabs),
+            preferenceItems = persistentListOf(
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = connectionPreferences.shelfTabsEnabled,
+                    title = stringResource(MR.strings.connection_library_shelf_tabs_switch),
+                    subtitle = stringResource(MR.strings.connection_library_shelf_tabs_summary),
+                ),
+                Preference.PreferenceItem.TextPreference(
+                    title = stringResource(MR.strings.connection_library_hidden_libraries),
+                    subtitle = hiddenSummary,
+                    enabled = profiles.isNotEmpty(),
+                    onClick = { navigator?.push(ConnectionLibraryHiddenScreen()) },
+                ),
+            ),
         )
     }
 

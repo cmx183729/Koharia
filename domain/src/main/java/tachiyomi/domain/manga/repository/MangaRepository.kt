@@ -32,6 +32,8 @@ interface MangaRepository {
 
     suspend fun getLibraryManga(): List<LibraryManga>
 
+    suspend fun getLibraryMangaBySources(sourceIds: Collection<Long>): List<LibraryManga>
+
     fun getLibraryMangaAsFlow(): Flow<List<LibraryManga>>
 
     fun getFavoritesBySourceId(sourceId: Long): Flow<List<Manga>>

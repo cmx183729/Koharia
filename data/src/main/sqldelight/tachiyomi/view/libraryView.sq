@@ -39,3 +39,8 @@ WHERE M.favorite = 1;
 library:
 SELECT *
 FROM libraryView;
+
+libraryForSources:
+SELECT *
+FROM libraryView
+WHERE source IN ?;

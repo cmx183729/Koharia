@@ -127,10 +127,13 @@ object HomeScreen : Screen() {
             HomeLibraryDefaultTab.COMICS -> ComicsTab
             HomeLibraryDefaultTab.LIBRARY -> LibraryTab
         }
+        // The shelf bar already gives every server its own page, so the dedicated server tab
+        // would be the same list twice.
+        val shelfTabsEnabled by connectionPreferences.shelfTabsEnabled.collectPreferenceAsState()
         val tabs = if (sourceKindSplitEnabled) {
             buildList<eu.kanade.presentation.util.Tab> {
                 add(AllComicsTab)
-                add(MangaServersTab)
+                if (!shelfTabsEnabled) add(MangaServersTab)
                 if (suwayomiActive) add(SuwayomiBrowseTab)
                 addAll(organizationTabs)
                 add(HistoryTab)

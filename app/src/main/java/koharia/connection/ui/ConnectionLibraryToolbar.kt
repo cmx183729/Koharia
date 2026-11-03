@@ -57,6 +57,7 @@ fun ConnectionLibraryToolbar(
     searchActions: (@Composable () -> Unit)? = null,
     scrollBehavior: TopAppBarScrollBehavior? = null,
     title: String? = null,
+    titleSlot: (@Composable () -> Unit)? = null,
 ) {
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -64,7 +65,7 @@ fun ConnectionLibraryToolbar(
     var selectingConnection by remember(searchQuery != null) { mutableStateOf(false) }
     SearchToolbar(
         actionTitle = title ?: stringResource(MR.strings.app_name),
-        titleContent = { AppBarTitle(title ?: stringResource(MR.strings.app_name)) },
+        titleContent = { titleSlot?.invoke() ?: AppBarTitle(title ?: stringResource(MR.strings.app_name)) },
         navigateUp = navigateUp,
         searchQuery = searchQuery,
         onChangeSearchQuery = onSearchQueryChange,

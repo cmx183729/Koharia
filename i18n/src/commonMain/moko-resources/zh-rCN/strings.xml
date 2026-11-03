@@ -2426,4 +2426,12 @@
     <string name="local_library_scan_min_images">最少图片数</string>
     <string name="local_library_scan_min_images_summary">漫画条目里的图片数不超过这个值就不再入库，用来清掉只剩几张坏图的文件夹。设为 0 表示全部入库。压缩包和电子书按自身页数计算，不受此限制。</string>
     <string name="local_library_content_type_locked">请先删除该类型的书架</string>
+    <string name="connection_library_shelf_tabs">库标签栏</string>
+    <string name="connection_library_shelf_tabs_switch">启用库标签栏</string>
+    <string name="connection_library_shelf_tabs_summary">在库页面顶部显示一条标签栏，按库切换并支持左右滑动。关闭后回到原来的单一聚合列表，便于对比。</string>
+    <string name="connection_library_hidden_libraries">隐藏的库</string>
+    <string name="connection_library_hidden_libraries_count">已隐藏 %1$d 个库</string>
+    <string name="connection_library_hidden_libraries_summary">勾选后这些库不会出现在库标签栏里，也不会进入“全部”。库本身的数据不受影响。</string>
+    <string name="connection_library_hidden_libraries_empty">还没有添加任何库</string>
+    <string name="connection_library_shelf_empty">没有可显示的库，请到设置里取消隐藏</string>
 </resources>

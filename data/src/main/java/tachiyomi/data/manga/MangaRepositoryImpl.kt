@@ -105,6 +105,13 @@ class MangaRepositoryImpl(
             .awaitAsList()
     }
 
+    override suspend fun getLibraryMangaBySources(sourceIds: Collection<Long>): List<LibraryManga> {
+        if (sourceIds.isEmpty()) return emptyList()
+        return database.libraryViewQueries
+            .libraryForSources(sourceIds.toList(), MangaMapper::mapLibraryManga)
+            .awaitAsList()
+    }
+
     override fun getLibraryMangaAsFlow(): Flow<List<LibraryManga>> {
         return database.libraryViewQueries
             .library(MangaMapper::mapLibraryManga)

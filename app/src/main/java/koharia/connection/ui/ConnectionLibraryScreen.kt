@@ -25,6 +25,7 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import dev.icerock.moko.resources.StringResource
 import eu.kanade.presentation.browse.BrowseSourceContent
 import eu.kanade.presentation.library.components.MangaReadProgress
 import eu.kanade.presentation.util.Screen
@@ -32,6 +33,7 @@ import eu.kanade.tachiyomi.data.download.DownloadManager
 import koharia.connection.ConnectionBrowseScreen
 import koharia.connection.ConnectionLibraryEntryKey
 import koharia.connection.ConnectionLibraryKind
+import koharia.connection.ConnectionPreferences
 import koharia.connection.MangaDownloadState
 import koharia.connection.NO_ACTIVE_CONNECTION
 import koharia.source.local.LocalLibraryScanProgressBar
@@ -52,7 +54,7 @@ import uy.kohesive.injekt.api.get
 /** Aggregate library host. It only reads persisted local membership and never refreshes a provider. */
 class ConnectionLibraryScreen(
     val allowedLibraryKinds: Set<ConnectionLibraryKind>? = null,
-    private val titleRes: dev.icerock.moko.resources.StringResource = MR.strings.label_library,
+    private val titleRes: StringResource = MR.strings.label_library,
 ) : Screen(), ConnectionBrowseScreen {
     override val sourceId: Long = NO_ACTIVE_CONNECTION
     override val refreshOnReselect: Boolean = true
@@ -73,187 +75,240 @@ class ConnectionLibraryScreen(
 
     @Composable
     override fun Content() {
+        val connectionPreferences = remember { Injekt.get<ConnectionPreferences>() }
+        val shelfEnabled by remember(connectionPreferences) { connectionPreferences.shelfTabsEnabled.changes() }
+            .collectAsState(connectionPreferences.shelfTabsEnabled.get())
+        if (shelfEnabled) {
+            ConnectionLibraryShelf(
+                titleRes = titleRes,
+                onActiveModelChanged = { runtimeModel = it },
+            )
+            return
+        }
         val model = rememberScreenModel {
             ConnectionLibraryScreenModel(allowedLibraryKinds = allowedLibraryKinds)
         }
         runtimeModel = model
-        val scanProgressTracker = remember { Injekt.get<LocalLibraryScanProgressTracker>() }
-        var searchQuery by remember { mutableStateOf<String?>(null) }
-        val state by model.state.collectAsState()
-        val pages = model.pages.collectAsLazyPagingItems()
-        val navigator = LocalNavigator.currentOrThrow
-        val snackbar = remember { SnackbarHostState() }
-        val refreshFailedMessage = stringResource(MR.strings.connection_library_refresh_failed)
+        ConnectionLibraryContent(model = model, titleRes = titleRes)
+    }
+}
+
+/** Single aggregate list: one model, one toolbar, no library switching. */
+@Composable
+internal fun ConnectionLibraryContent(
+    model: ConnectionLibraryScreenModel,
+    titleRes: StringResource,
+) {
+    var searchQuery by remember { mutableStateOf<String?>(null) }
+    val state by model.state.collectAsState()
+    val snackbar = remember { SnackbarHostState() }
+    val refreshFailedMessage = stringResource(MR.strings.connection_library_refresh_failed)
+    LaunchedEffect(state.error, state.entries.isNotEmpty()) {
+        if (state.error != null && state.entries.isNotEmpty()) {
+            snackbar.showSnackbar(refreshFailedMessage)
+        }
+    }
+    var showFilters by remember { mutableStateOf(false) }
+
+    ConnectionLibraryFilterSheet(model = model, visible = showFilters, onDismiss = { showFilters = false })
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
+        topBar = { scrollBehavior ->
+            ConnectionLibraryToolbar(
+                searchQuery = searchQuery,
+                onSearchQueryChange = { searchQuery = it },
+                onSearch = model::search,
+                onCloseSearch = {
+                    searchQuery = null
+                    model.search("")
+                },
+                displayMode = state.displayMode,
+                onDisplayModeChange = model::setDisplayMode,
+                connectionProfiles = emptyList(),
+                activeConnectionId = NO_ACTIVE_CONNECTION,
+                onConnectionSelect = {},
+                onFilterClick = { showFilters = true },
+                onRefresh = model::refresh,
+                navigateUp = null,
+                showFilterAction = true,
+                hasActiveFilters = state.filters.isActive,
+                showConnectionAction = false,
+                title = stringResource(titleRes),
+                scrollBehavior = scrollBehavior,
+            )
+        },
+    ) { contentPadding ->
+        Column(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
+            ConnectionLibraryBody(model = model, snackbar = snackbar, reportErrors = false)
+        }
+    }
+}
+
+/**
+ * The grid region of the library. It owns everything that depends on the entries of a single model so
+ * that a library tab can render it on its own page inside the shelf pager.
+ */
+@Composable
+internal fun ConnectionLibraryBody(
+    model: ConnectionLibraryScreenModel,
+    snackbar: SnackbarHostState,
+    modifier: Modifier = Modifier,
+    reportErrors: Boolean = true,
+) {
+    val state by model.state.collectAsState()
+    val pages = model.pages.collectAsLazyPagingItems()
+    val navigator = LocalNavigator.currentOrThrow
+    val refreshFailedMessage = stringResource(MR.strings.connection_library_refresh_failed)
+    if (reportErrors) {
         LaunchedEffect(state.error, state.entries.isNotEmpty()) {
             if (state.error != null && state.entries.isNotEmpty()) {
                 snackbar.showSnackbar(refreshFailedMessage)
             }
         }
-        val libraryPreferences = remember { Injekt.get<LibraryPreferences>() }
-        val configuration = LocalConfiguration.current
-        val columnPreference = if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
-            libraryPreferences.landscapeColumns
-        } else {
-            libraryPreferences.portraitColumns
-        }
-        val columns by columnPreference.collectAsState()
-        val progressByKey = remember(state.entries, model.chapterProgress) {
-            connectionLibraryReadProgress(state.entries, model.chapterProgress)
-        }
-        var showFilters by remember { mutableStateOf(false) }
-        val ownerOptions = remember(state.entries) { model.ownerOptions() }
-        val sortOptions = listOf(
-            ConnectionLibrarySort.TITLE to stringResource(MR.strings.connection_library_sort_title),
-            ConnectionLibrarySort.AUTHOR to stringResource(MR.strings.connection_library_sort_author),
-            ConnectionLibrarySort.DATE_ADDED to stringResource(MR.strings.action_sort_date_added),
-            ConnectionLibrarySort.LAST_UPDATE to stringResource(MR.strings.action_sort_last_manga_update),
-            ConnectionLibrarySort.OWNER to stringResource(MR.strings.connection_library_sort_owner),
-        )
-        val ownerLabels = remember(ownerOptions, model) { ownerOptions.toMap() }
-        // Only worth showing when the list actually mixes owners; on a single-source library the
-        // label is the same string on every cover.
-        val showOwnerBadge = ownerOptions.size > 1
-        val downloads = remember { Injekt.get<DownloadManager>() }
-        val downloadCounts = remember { mutableStateOf<Map<ConnectionLibraryEntryKey, Long>>(emptyMap()) }
-        val onDownloadState = remember(downloads, model) {
-            { manga: tachiyomi.domain.manga.model.Manga ->
-                val key = ConnectionLibraryEntryKey(manga.source, manga.id)
-                downloadCounts.value[key]?.let { MangaDownloadState(it, null) }
-                    ?: aggregateDownloadState(manga, downloads).also { value ->
-                        downloadCounts.value = downloadCounts.value + (key to value.count)
-                    }
-            }
-        }
-        LaunchedEffect(downloads, onDownloadState, state.entries) {
-            downloads.cacheUpdates.collect { change ->
-                if (change.sourceId == null && change.mangaDirectories == null) {
-                    downloadCounts.value = emptyMap()
-                    model.invalidateDownloadCounts()
-                } else {
-                    val affected = state.entries.filter { entry ->
-                        downloads.isAffectedByCacheUpdate(entry.manga, change)
-                    }
-                    affected.forEach { entry ->
-                        downloadCounts.value = downloadCounts.value - entry.key
-                        model.invalidateDownloadCount(entry.manga)
-                    }
+    }
+    val libraryPreferences = remember { Injekt.get<LibraryPreferences>() }
+    val configuration = LocalConfiguration.current
+    val columnPreference = if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+        libraryPreferences.landscapeColumns
+    } else {
+        libraryPreferences.portraitColumns
+    }
+    val columns by columnPreference.collectAsState()
+    val progressByKey = remember(state.entries, model.chapterProgress) {
+        connectionLibraryReadProgress(state.entries, model.chapterProgress)
+    }
+    val ownerOptions = remember(state.entries) { model.ownerOptions() }
+    val ownerLabels = remember(ownerOptions, model) { ownerOptions.toMap() }
+    // Only worth showing when the list actually mixes owners; on a single-source library the
+    // label is the same string on every cover.
+    val showOwnerBadge = ownerOptions.size > 1
+    val downloads = remember { Injekt.get<DownloadManager>() }
+    val downloadCounts = remember { mutableStateOf<Map<ConnectionLibraryEntryKey, Long>>(emptyMap()) }
+    val onDownloadState = remember(downloads, model) {
+        { manga: tachiyomi.domain.manga.model.Manga ->
+            val key = ConnectionLibraryEntryKey(manga.source, manga.id)
+            downloadCounts.value[key]?.let { MangaDownloadState(it, null) }
+                ?: aggregateDownloadState(manga, downloads).also { value ->
+                    downloadCounts.value = downloadCounts.value + (key to value.count)
                 }
-            }
         }
-
-        if (showFilters) {
-            ConnectionLibraryAllFilterSheet(
-                owners = ownerOptions,
-                libraryKinds = model.libraryKindOptions(),
-                sortOptions = sortOptions,
-                filters = state.filters,
-                onDismiss = { showFilters = false },
-                onApply = { filters ->
-                    model.setFilters(filters)
-                    model.refreshDownloadFilter()
-                    showFilters = false
-                },
-            )
-        }
-
-        Scaffold(
-            snackbarHost = { SnackbarHost(snackbar) },
-            topBar = { scrollBehavior ->
-                ConnectionLibraryToolbar(
-                    searchQuery = searchQuery,
-                    onSearchQueryChange = { searchQuery = it },
-                    onSearch = model::search,
-                    onCloseSearch = {
-                        searchQuery = null
-                        model.search("")
-                    },
-                    displayMode = state.displayMode,
-                    onDisplayModeChange = model::setDisplayMode,
-                    connectionProfiles = emptyList(),
-                    activeConnectionId = NO_ACTIVE_CONNECTION,
-                    onConnectionSelect = {},
-                    onFilterClick = { showFilters = true },
-                    onRefresh = model::refresh,
-                    navigateUp = null,
-                    showFilterAction = true,
-                    hasActiveFilters = state.filters.isActive,
-                    showConnectionAction = false,
-                    title = stringResource(titleRes),
-                    scrollBehavior = scrollBehavior,
-                )
-            },
-        ) { contentPadding ->
-            val scanProgress by scanProgressTracker.progress.collectAsState()
-            val activeScanProgress = remember(scanProgress) { scanProgress.aggregateScanProgress() }
-            // The toolbar is opaque and the grid used to be laid out from the very top of the
-            // window, so the first row of covers sat underneath the search and filter actions.
-            // Keeping the padding on the column means the grid viewport starts below the bar
-            // instead of scrolling under it.
-            Column(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
-                activeScanProgress?.let { progress ->
-                    LocalLibraryScanProgressBar(progress = progress)
+    }
+    LaunchedEffect(downloads, onDownloadState, state.entries) {
+        downloads.cacheUpdates.collect { change ->
+            if (change.sourceId == null && change.mangaDirectories == null) {
+                downloadCounts.value = emptyMap()
+                model.invalidateDownloadCounts()
+            } else {
+                val affected = state.entries.filter { entry ->
+                    downloads.isAffectedByCacheUpdate(entry.manga, change)
                 }
-                Box(modifier = Modifier.weight(1f)) {
-                    when {
-                        state.isLoading && state.entries.isEmpty() -> LoadingScreen(Modifier.fillMaxSize())
-                        state.error != null && state.entries.isEmpty() ->
-                            EmptyScreen(
-                                message = state.error?.message ?: stringResource(MR.strings.connection_unavailable),
-                                actions = kotlinx.collections.immutable.persistentListOf(
-                                    EmptyScreenAction(
-                                        stringRes = MR.strings.action_retry,
-                                        icon = Icons.Outlined.Refresh,
-                                        onClick = model::refresh,
-                                    ),
-                                ),
-                            )
-                        state.entries.isEmpty() -> EmptyScreen(
-                            message = stringResource(MR.strings.no_results_found),
-                            actions = kotlinx.collections.immutable.persistentListOf(
-                                EmptyScreenAction(
-                                    stringRes = MR.strings.action_retry,
-                                    icon = Icons.Outlined.Refresh,
-                                    onClick = model::refresh,
-                                ),
-                            ),
-                        )
-                        else -> BrowseSourceContent(
-                            modifier = Modifier.fillMaxSize(),
-                            source = null,
-                            mangaList = pages,
-                            columns = if (columns > 0) GridCells.Fixed(columns) else GridCells.Adaptive(120.dp),
-                            displayMode = state.displayMode,
-                            snackbarHostState = snackbar,
-                            contentPadding = PaddingValues(0.dp),
-                            showLibraryBadges = false,
-                            readProgress = { manga ->
-                                progressByKey[ConnectionLibraryEntryKey(manga.source, manga.id)]
-                            },
-                            manualDownloadState = onDownloadState,
-                            // The owner name is a disambiguation aid, not the entry title. Passing
-                            // it as entryLabel replaced the manga title with the library name on
-                            // every tile, which is why the library name showed up instead of the
-                            // manga name.
-                            entryBadge = { manga ->
-                                if (showOwnerBadge) {
-                                    Badge(
-                                        text = ownerLabels[manga.source]
-                                            ?: model.ownerLabel(manga.source),
-                                    )
-                                }
-                            },
-                            onWebViewClick = {},
-                            onHelpClick = {},
-                            onMangaClick = { navigator.push(it.toConnectionDetailsScreen()) },
-                            onMangaLongClick = { navigator.push(it.toConnectionDetailsScreen()) },
-                            onRefresh = model::refresh,
-                            // Entries come from an in-memory list, so there is never a paging load
-                            // to report: the aggregate screen renders its own loading state above.
-                            showPagingLoadingIndicator = false,
-                        )
-                    }
+                affected.forEach { entry ->
+                    downloadCounts.value = downloadCounts.value - entry.key
+                    model.invalidateDownloadCount(entry.manga)
                 }
             }
         }
     }
+
+    val scanProgressTracker = remember { Injekt.get<LocalLibraryScanProgressTracker>() }
+    val scanProgress by scanProgressTracker.progress.collectAsState()
+    val activeScanProgress = remember(scanProgress) { scanProgress.aggregateScanProgress() }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        activeScanProgress?.let { progress ->
+            LocalLibraryScanProgressBar(progress = progress)
+        }
+        Box(modifier = Modifier.weight(1f)) {
+            when {
+                state.isLoading && state.entries.isEmpty() -> LoadingScreen(Modifier.fillMaxSize())
+                state.error != null && state.entries.isEmpty() ->
+                    EmptyScreen(
+                        message = state.error?.message ?: stringResource(MR.strings.connection_unavailable),
+                        actions = kotlinx.collections.immutable.persistentListOf(
+                            EmptyScreenAction(
+                                stringRes = MR.strings.action_retry,
+                                icon = Icons.Outlined.Refresh,
+                                onClick = model::refresh,
+                            ),
+                        ),
+                    )
+                state.entries.isEmpty() -> EmptyScreen(
+                    message = stringResource(MR.strings.no_results_found),
+                    actions = kotlinx.collections.immutable.persistentListOf(
+                        EmptyScreenAction(
+                            stringRes = MR.strings.action_retry,
+                            icon = Icons.Outlined.Refresh,
+                            onClick = model::refresh,
+                        ),
+                    ),
+                )
+                else -> BrowseSourceContent(
+                    modifier = Modifier.fillMaxSize(),
+                    source = null,
+                    mangaList = pages,
+                    columns = if (columns > 0) GridCells.Fixed(columns) else GridCells.Adaptive(120.dp),
+                    displayMode = state.displayMode,
+                    snackbarHostState = snackbar,
+                    contentPadding = PaddingValues(0.dp),
+                    showLibraryBadges = false,
+                    readProgress = { manga ->
+                        progressByKey[ConnectionLibraryEntryKey(manga.source, manga.id)]
+                    },
+                    manualDownloadState = onDownloadState,
+                    // The owner name is a disambiguation aid, not the entry title. Passing
+                    // it as entryLabel replaced the manga title with the library name on
+                    // every tile, which is why the library name showed up instead of the
+                    // manga name.
+                    entryBadge = { manga ->
+                        if (showOwnerBadge) {
+                            Badge(
+                                text = ownerLabels[manga.source]
+                                    ?: model.ownerLabel(manga.source),
+                            )
+                        }
+                    },
+                    onWebViewClick = {},
+                    onHelpClick = {},
+                    onMangaClick = { navigator.push(it.toConnectionDetailsScreen()) },
+                    onMangaLongClick = { navigator.push(it.toConnectionDetailsScreen()) },
+                    onRefresh = model::refresh,
+                    // Entries come from an in-memory list, so there is never a paging load
+                    // to report: the aggregate screen renders its own loading state above.
+                    showPagingLoadingIndicator = false,
+                )
+            }
+        }
+    }
 }
+
+@Composable
+internal fun ConnectionLibraryFilterSheet(
+    model: ConnectionLibraryScreenModel,
+    visible: Boolean,
+    onDismiss: () -> Unit,
+) {
+    if (!visible) return
+    val state by model.state.collectAsState()
+    ConnectionLibraryAllFilterSheet(
+        owners = remember(state.entries) { model.ownerOptions() },
+        libraryKinds = remember(state.entries) { model.libraryKindOptions() },
+        sortOptions = connectionLibrarySortOptions(),
+        filters = state.filters,
+        onDismiss = onDismiss,
+        onApply = { filters ->
+            model.setFilters(filters)
+            model.refreshDownloadFilter()
+            onDismiss()
+        },
+    )
+}
+
+@Composable
+internal fun connectionLibrarySortOptions(): List<Pair<ConnectionLibrarySort, String>> = listOf(
+    ConnectionLibrarySort.TITLE to stringResource(MR.strings.connection_library_sort_title),
+    ConnectionLibrarySort.AUTHOR to stringResource(MR.strings.connection_library_sort_author),
+    ConnectionLibrarySort.DATE_ADDED to stringResource(MR.strings.action_sort_date_added),
+    ConnectionLibrarySort.LAST_UPDATE to stringResource(MR.strings.action_sort_last_manga_update),
+    ConnectionLibrarySort.OWNER to stringResource(MR.strings.connection_library_sort_owner),
+)

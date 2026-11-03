@@ -27,11 +27,14 @@ class ConnectionPreferences(
     private val knownConnectionIds = preferenceStore.getStringSet(PREF_KNOWN_CONNECTION_IDS, emptySet())
     private val serializedProviderMappings = preferenceStore.getStringSet(PREF_PROVIDER_MAPPINGS, emptySet())
     private val hasInitializedProfiles = preferenceStore.getBoolean(PREF_HAS_INITIALIZED_PROFILES, false)
+    private val serializedHiddenLibraryIds = preferenceStore.getStringSet(PREF_HIDDEN_LIBRARY_IDS, emptySet())
 
     val activeConnectionId: Preference<Long> = preferenceStore.getLong(
         PREF_ACTIVE_CONNECTION_ID,
         NO_ACTIVE_CONNECTION,
     )
+
+    val shelfTabsEnabled: Preference<Boolean> = preferenceStore.getBoolean(PREF_SHELF_TABS, false)
 
     val configMode: Preference<ConnectionConfigMode> = preferenceStore.getEnum(
         PREF_CONFIG_MODE,
@@ -47,6 +50,20 @@ class ConnectionPreferences(
 
     fun getProfiles(): List<LibraryConnectionProfile> {
         return normalizeProfiles(decodeProfiles(serializedProfiles.get()))
+    }
+
+    fun hiddenLibraryIds(): Set<Long> {
+        return serializedHiddenLibraryIds.get().mapNotNullTo(linkedSetOf(), String::toLongOrNull)
+    }
+
+    fun hiddenLibraryIdsChanges(): Flow<Set<Long>> {
+        return serializedHiddenLibraryIds.changes()
+            .map { values -> values.mapNotNullTo(linkedSetOf(), String::toLongOrNull) }
+            .distinctUntilChanged()
+    }
+
+    fun setHiddenLibraryIds(ids: Collection<Long>) {
+        serializedHiddenLibraryIds.set(ids.mapTo(linkedSetOf()) { it.toString() })
     }
 
     @Synchronized
@@ -189,6 +206,8 @@ class ConnectionPreferences(
         internal const val PREF_HAS_INITIALIZED_PROFILES = "connection_has_initialized_profiles"
         internal const val PREF_KNOWN_CONNECTION_IDS = "connection_known_ids"
         internal const val PREF_PROVIDER_MAPPINGS = "connection_source_provider_mappings"
+        internal const val PREF_SHELF_TABS = "connection_library_shelf_tabs"
+        internal const val PREF_HIDDEN_LIBRARY_IDS = "connection_hidden_library_ids"
 
         const val LOCAL_CONNECTION_ID = 0L
     }

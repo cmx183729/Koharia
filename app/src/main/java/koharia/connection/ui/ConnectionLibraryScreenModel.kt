@@ -36,6 +36,7 @@ class ConnectionLibraryScreenModel(
     private val sourceManager: SourceManager = Injekt.get(),
     private val sourcePreferences: SourcePreferences = Injekt.get(),
     private val allowedLibraryKinds: Set<ConnectionLibraryKind>? = null,
+    private val allowedConnectionIds: Set<Long>? = null,
     private val downloadCount: (Manga) -> Int = { manga -> Injekt.get<DownloadManager>().getDownloadCount(manga) },
     private val ownerLabel: (Long) -> String = { sourceId ->
         val source = sourceManager.get(sourceId)
@@ -122,7 +123,7 @@ class ConnectionLibraryScreenModel(
             mutableState.update { it.copy(isLoading = true, error = null) }
             try {
                 val entries = filterConnectionLibraryEntriesByKind(
-                    mangaRepository.getAggregatedConnectionLibraryEntries(sourceManager),
+                    mangaRepository.getAggregatedConnectionLibraryEntries(sourceManager, allowedConnectionIds),
                     allowedLibraryKinds,
                 )
                 if (generation != refreshGeneration) return@launch

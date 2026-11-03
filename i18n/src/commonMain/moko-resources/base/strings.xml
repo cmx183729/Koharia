@@ -2564,4 +2564,12 @@
     <string name="local_library_scan_min_images">Minimum images per entry</string>
     <string name="local_library_scan_min_images_summary">Comic entries holding this many images or fewer are skipped, which removes folders left with a few damaged pages. Set it to 0 to import everything. Archives and books are measured by their own pages, so they are not affected.</string>
     <string name="local_library_content_type_locked">Remove its bookshelves first</string>
+    <string name="connection_library_shelf_tabs">Library tab bar</string>
+    <string name="connection_library_shelf_tabs_switch">Enable library tab bar</string>
+    <string name="connection_library_shelf_tabs_summary">Shows a scrollable tab bar at the top of the library and switches libraries by swipe. Turning it off restores the single aggregate list so both can be compared.</string>
+    <string name="connection_library_hidden_libraries">Hidden libraries</string>
+    <string name="connection_library_hidden_libraries_count">%1$d libraries hidden</string>
+    <string name="connection_library_hidden_libraries_summary">Checked libraries are left out of the library tab bar and out of All. The library itself keeps its data.</string>
+    <string name="connection_library_hidden_libraries_empty">No libraries have been added yet</string>
+    <string name="connection_library_shelf_empty">No library to show. Unhide one in settings.</string>
 </resources>
